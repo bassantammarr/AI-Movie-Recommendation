@@ -735,7 +735,6 @@ def detail_dialog(client, model):
             ("Released", m.get("year") or "—"),
             ("Runtime", m.get("runtime") or "—"),
             ("Picked for", " · ".join([p["mood"], f"Age {p['age']}"] + (p["genres"][:2] or []))),
-            ("Model", model or "—"),
         ]
         st.markdown(
             '<div class="facts">'
@@ -814,7 +813,7 @@ with st.container(key="header"):
                 models = available_models(api_key)
                 if models:
                     client = Groq(api_key=api_key)
-                    model = st.selectbox("Model", models, key="model")
+                    model = models[0]
                 else:
                     st.warning("No chat models are available for this key.")
             except Exception as ex:
@@ -1074,7 +1073,7 @@ if st.session_state.stage == "results":
                     {"role": "assistant", "content": answer},
                 ]
 
-    st.markdown(f'<footer class="cm-footer">Powered by Groq · {esc(model)} · Facts checked against Wikidata</footer>',
+    st.markdown('<footer class="cm-footer">Powered by Groq · Facts checked against Wikidata</footer>',
                 unsafe_allow_html=True)
 
     if st.session_state.pop("show_detail", False) and movies:
