@@ -7,8 +7,10 @@ import requests
 import streamlit as st
 from groq import Groq
 
-st.set_page_config(page_title="CineMatch AI", page_icon="🎬", layout="wide")
+st.set_page_config(page_title="CineMatch AI", page_icon="🎬", layout="wide", initial_sidebar_state="collapsed")
 
+ACCENT = "#E21221"
+TOP_N, MORE_N = 3, 6  
 
 PREFERRED_MODELS = [
     "llama-3.3-70b-versatile",
@@ -22,30 +24,15 @@ PREFERRED_MODELS = [
 NON_CHAT = ("whisper", "tts", "guard", "playai", "orpheus", "prompt-guard", "distil")
 
 MOODS = {
-    "Happy": "😄",
-    "Sad": "😢",
-    "Excited": "🤩",
-    "Romantic": "💕",
-    "Adventurous": "🧭",
-    "Thoughtful": "🤔",
-    "Scared": "😱",
-    "Chill": "😌",
+    "Thoughtful": {"color": "#2f63a0", "icon": ":material/lightbulb:", "rule": "deep themes, slower pace, ideas that linger"},
+    "Cozy": {"color": "#a8701a", "icon": ":material/local_cafe:", "rule": "warm, comforting, feel-good, low stakes"},
+    "Thrilled": {"color": "#c2410c", "icon": ":material/bolt:", "rule": "fast-paced, high energy, suspenseful"},
+    "Heartbroken": {"color": "#9d3c72", "icon": ":material/heart_broken:", "rule": "emotional and cathartic, but ultimately hopeful"},
+    "Curious": {"color": "#2f7a52", "icon": ":material/explore:", "rule": "mind-expanding: mysteries, big ideas, discovery"},
+    "Surprise me": {"color": "#474747", "icon": ":material/shuffle:", "rule": "anything goes: varied, unexpected but acclaimed picks"},
 }
-MOOD_RULES = {
-    "Happy": "light, uplifting, optimistic tone",
-    "Sad": "comforting, emotional but hopeful",
-    "Excited": "fast-paced, high energy",
-    "Romantic": "relationship-driven, emotional",
-    "Adventurous": "exploration, action, discovery",
-    "Thoughtful": "deep themes, slower pace",
-    "Scared": "suspenseful, tense, spooky",
-    "Chill": "cozy, easy-going, low stakes",
-}
-GENRES = {
-    "Action": "💥", "Comedy": "😂", "Drama": "🎭", "Horror": "👻", "Romance": "❤️",
-    "Sci-Fi": "🚀", "Fantasy": "🧙", "Thriller": "🔪", "Mystery": "🕵️",
-    "Animation": "🎨", "Documentary": "🎥", "Crime": "🚔",
-}
+GENRES = ["Drama", "Comedy", "Thriller", "Romance", "Sci-Fi", "Animation", "Documentary",
+          "Action", "Horror", "Fantasy", "Mystery", "Crime"]
 LANGUAGES = ["Any", "English", "Arabic", "French", "Spanish", "Korean", "Japanese", "Hindi", "Italian", "German"]
 ERAS = ["Any era", "Classics (pre-1980)", "80s & 90s", "2000s", "2010s", "2020s"]
 ERA_RANGES = {
@@ -82,138 +69,170 @@ LANG_COUNTRIES = {
 FILM_TYPES = ["Q11424", "Q202866", "Q29168811"]  
 EXTRA_CANDIDATES = 3  
 
-GRADIENTS = [
-    "linear-gradient(135deg,#ff4d6d 0%,#7b2ff7 100%)",
-    "linear-gradient(135deg,#00c6ff 0%,#0072ff 100%)",
-    "linear-gradient(135deg,#f7971e 0%,#ffd200 100%)",
-    "linear-gradient(135deg,#11998e 0%,#38ef7d 100%)",
-    "linear-gradient(135deg,#fc5c7d 0%,#6a82fb 100%)",
-    "linear-gradient(135deg,#8e2de2 0%,#4a00e0 100%)",
-]
+POSTER_COLORS = ["#1d3a4a", "#4a3320", "#2b2552", "#24402f", "#1c2d4f", "#3a2440", "#3d2a2a", "#2f3a3f", "#42381c"]
+CHAT_SUGGESTIONS = ["Compare all three", "Which is shortest?", "Same mood, but lighter", "Anything not in English?"]
+
 
 # --------------------------------------------------------------------------- styles
 st.markdown(
-    """
+    f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap');
 
-html, body, [class*="css"], .stMarkdown, button, input, textarea { font-family: 'Outfit', sans-serif !important; }
+.stApp {{ background:#141414; color:#ffffff; font-family: Inter, system-ui, sans-serif; }}
+.stApp p, .stApp label, .stApp input, .stApp button {{ font-family: Inter, system-ui, sans-serif; }}
+header[data-testid="stHeader"] {{ background: transparent; }}
+section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ display:none; }}
+.block-container {{ max-width:100%; padding: 1rem 4vw 3rem; }}
 
-.stApp {
-  background:
-    radial-gradient(900px 500px at 10% -10%, rgba(255,77,109,.18), transparent 60%),
-    radial-gradient(900px 600px at 110% 10%, rgba(123,47,247,.20), transparent 60%),
-    #0b0b14;
-}
-.block-container { padding-top: 2rem; max-width: 1200px; }
-header[data-testid="stHeader"] { background: transparent; }
+.bebas {{ font-family:'Bebas Neue', Impact, sans-serif; font-weight:400; letter-spacing:1px; line-height:.9; }}
+.logo {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:40px; letter-spacing:1px; line-height:1; color:{ACCENT}; }}
+.muted {{ color:#8c8c8c; font-size:13px; }}
 
-.hero { text-align:center; padding: 1.5rem 0 1rem; }
-.hero .badge {
-  display:inline-block; padding:.3rem .9rem; border-radius:999px; font-size:.8rem; letter-spacing:.08em;
-  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); color:#cfcfe6; text-transform:uppercase;
-}
-.hero h1 {
-  font-size: clamp(2.4rem, 5vw, 4rem); font-weight:800; margin:.6rem 0 .2rem; line-height:1.05;
-  background: linear-gradient(90deg,#ff4d6d,#ff9a5a,#c86bff,#6a82fb);
-  background-size: 300% 100%;
-  -webkit-background-clip:text; background-clip:text; color:transparent;
-  animation: shine 8s ease-in-out infinite;
-}
-.hero p { color:#a9a9c2; font-size:1.1rem; margin:0; }
-@keyframes shine { 0%,100%{background-position:0% 50%} 50%{background-position:100% 50%} }
-
-.section-title { font-size:1.05rem; font-weight:600; color:#e6e6f5; margin: .2rem 0 .6rem; }
-.section-title span { color:#ff4d6d; }
-
-.st-key-setup_panel {
-  background: rgba(22,22,38,.65) !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  border-radius: 20px !important;
-  padding: 1.4rem 1.6rem !important;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 10px 40px rgba(0,0,0,.35);
-}
+/* buttons */
+.stApp button[data-testid="stBaseButton-primary"] {{
+  background:{ACCENT}; border:0; color:#fff; font-weight:700; border-radius:4px; min-height:46px; font-size:17px;
+}}
+.stApp button[data-testid="stBaseButton-primary"]:hover {{ background:#b80f1b; color:#fff; }}
+.stApp button[data-testid="stBaseButton-secondary"] {{
+  background:rgba(109,109,110,.7); color:#fff; border:0; border-radius:4px; font-weight:700; min-height:44px;
+}}
+.stApp button[data-testid="stBaseButton-secondary"]:hover {{ background:rgba(109,109,110,.45); color:#fff; }}
+.stApp button[data-testid="stBaseButton-tertiary"] {{ color:#d6d6d6; font-weight:600; min-height:44px; }}
+.stApp button[data-testid="stBaseButton-tertiary"]:hover {{ color:#fff; }}
+.stApp a[data-testid^="stBaseLinkButton"] {{ border-radius:4px; font-weight:700; min-height:44px; }}
+[class*="st-key-watch"] a {{ background:#ffffff !important; color:#141414 !important; border:0 !important; }}
+[class*="st-key-watch"] a:hover {{ background:#e5e5e5 !important; }}
+.stApp [class*="st-key-round_"] button {{
+  width:50px; height:50px; min-height:50px; border-radius:50%; border:2px solid rgba(255,255,255,.7);
+  background:rgba(20,20,20,.5); padding:0;
+}}
+.stApp [class*="st-key-round_"] button:hover {{ border-color:#fff; background:rgba(60,60,60,.7); }}
 
 /* pills */
-button[data-testid="stBaseButton-pills"] {
-  border-radius:999px !important; border:1px solid rgba(255,255,255,.14) !important;
-  background:rgba(255,255,255,.04) !important; transition: all .15s ease;
-}
-button[data-testid="stBaseButton-pills"]:hover { border-color:#ff4d6d !important; transform: translateY(-1px); }
-button[data-testid="stBaseButton-pillsActive"] {
-  border-radius:999px !important; border:1px solid transparent !important;
-  background: linear-gradient(135deg,#ff4d6d,#7b2ff7) !important; color:#fff !important;
-  box-shadow: 0 4px 18px rgba(255,77,109,.35);
-}
+.stApp button[data-testid="stBaseButton-pills"] {{
+  border-radius:999px; border:1px solid #5a5a5a; background:transparent; color:#e6e6e6;
+  min-height:44px; padding:0 20px; font-weight:600;
+}}
+.stApp button[data-testid="stBaseButton-pillsActive"] {{
+  border-radius:999px; border:1px solid #fff; background:#fff; color:#141414; min-height:44px; padding:0 20px; font-weight:600;
+}}
+.st-key-genre_pills div:has(> button[data-testid^="stBaseButton-pills"]) {{ justify-content:center; }}
 
-/* primary button */
-button[data-testid="stBaseButton-primary"] {
-  background: linear-gradient(135deg,#ff4d6d,#7b2ff7) !important; border:none !important;
-  border-radius: 14px !important; font-weight:600 !important; padding:.7rem 1rem !important;
-  box-shadow: 0 8px 30px rgba(255,77,109,.35); transition: transform .15s ease, box-shadow .15s ease;
-}
-button[data-testid="stBaseButton-primary"]:hover { transform: translateY(-2px); box-shadow: 0 12px 36px rgba(123,47,247,.45); }
-button[data-testid="stBaseButton-secondary"] { border-radius: 12px !important; }
+/* form labels */
+.st-key-filters label p, .st-key-header label p {{ font-size:12px; letter-spacing:1px; font-weight:600; color:#b3b3b3; text-transform:uppercase; }}
 
-/* movie cards */
-.movie-card {
-  min-height:545px; display:flex; flex-direction:column; border-radius:20px; overflow:hidden;
-  background: rgba(22,22,38,.85); border:1px solid rgba(255,255,255,.08);
-  box-shadow: 0 10px 40px rgba(0,0,0,.4);
-  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
-  animation: rise .5s ease both;
-}
-.movie-card:hover { transform: translateY(-6px); border-color: rgba(255,77,109,.5); box-shadow: 0 18px 50px rgba(255,77,109,.18); }
-@keyframes rise { from{opacity:0; transform:translateY(16px)} to{opacity:1; transform:none} }
-.poster { position:relative; height:170px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-.poster .emoji { font-size:4.2rem; line-height:1; white-space:nowrap; filter: drop-shadow(0 6px 16px rgba(0,0,0,.35)); }
-.poster .rank {
-  position:absolute; top:12px; left:12px; background:rgba(0,0,0,.45); color:#fff;
-  padding:.15rem .6rem; border-radius:999px; font-weight:600; font-size:.85rem;
-}
-.poster .rating {
-  position:absolute; top:12px; right:12px; background:rgba(0,0,0,.45); color:#ffd166;
-  padding:.15rem .6rem; border-radius:999px; font-weight:600; font-size:.85rem;
-}
-.card-body { padding: 1rem 1.1rem 1.2rem; flex:1; display:flex; flex-direction:column; }
-.card-body h3 { margin:0; font-size:1.3rem; font-weight:700; color:#fff; line-height:1.2; }
-.meta { color:#9a9ab5; font-size:.88rem; margin:.25rem 0 .6rem; }
-.verified, .unverified { font-size:.72rem; padding:.08rem .45rem; border-radius:999px; margin-left:.3rem; }
-.verified { color:#5be49b; background:rgba(91,228,155,.12); border:1px solid rgba(91,228,155,.3); }
-.unverified { color:#f5c26b; background:rgba(245,194,107,.12); border:1px solid rgba(245,194,107,.3); }
-.chips { display:flex; flex-wrap:wrap; gap:.35rem; margin-bottom:.7rem; }
-.chip {
-  font-size:.75rem; padding:.18rem .6rem; border-radius:999px;
-  background:rgba(255,77,109,.12); color:#ff8fa3; border:1px solid rgba(255,77,109,.25);
-}
-.chip.lang { background:rgba(106,130,251,.14); color:#a9b8ff; border-color:rgba(106,130,251,.3); }
-.original { color:#c9c9e0; font-size:.95rem; margin-top:.15rem; unicode-bidi:plaintext; }
-.tagline { font-style:italic; color:#d4d4e8; margin-bottom:.8rem; font-size:.95rem; }
-.why { font-size:.88rem; color:#c0c0d8; margin:.3rem 0; }
-.why b { color:#fff; }
-.links { display:flex; gap:.5rem; margin-top:auto; padding-top:.9rem; }
-.links a {
-  flex:1; text-align:center; text-decoration:none !important; font-size:.85rem; font-weight:600;
-  padding:.45rem .5rem; border-radius:10px; color:#fff !important;
-  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); transition: background .15s ease;
-}
-.links a:hover { background:rgba(255,77,109,.25); }
+/* mood tiles */
+[class*="st-key-mood_"] {{ display:flex; justify-content:center; }}
+.stApp [class*="st-key-mood_"] button {{
+  width:150px; height:150px; border-radius:6px; border:0; color:#fff; opacity:.85;
+  outline:4px solid transparent; transition: transform .15s ease, opacity .15s ease;
+}}
+.stApp [class*="st-key-mood_"] button:hover {{ opacity:1; transform:scale(1.04); color:#fff; }}
+.stApp [class*="st-key-mood_"] button span[data-has-shortcut] {{ display:flex; flex-direction:column; align-items:center; gap:14px; }}
+[class*="st-key-mood_"] button span[data-testid="stIconMaterial"] {{ font-size:60px; }}
+[class*="st-key-mood_"] button p {{ font-size:17px; font-weight:600; }}
 
-.profile-line { color:#b8b8d0; text-align:center; margin: -.2rem 0 1.2rem; }
-.profile-line b { color:#fff; }
+/* hero */
+.st-key-hero {{
+  position:relative; min-height:600px; justify-content:flex-end;
+  margin:0 -4vw; width:calc(100% + 8vw) !important; max-width:none !important; box-sizing:border-box; padding:110px 4vw 150px; overflow:hidden;
+}}
+.hero-art {{
+  position:absolute; right:3vw; top:40px; max-width:55%; text-align:right; pointer-events:none;
+  font-family:'Bebas Neue', Impact, sans-serif; font-size:clamp(120px,16vw,260px); line-height:.82;
+  color:transparent; -webkit-text-stroke:2px rgba(255,255,255,.16); overflow:hidden;
+}}
+.kicker {{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }}
+.kicker .cm {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:24px; line-height:1; color:{ACCENT}; }}
+.kicker span:last-child {{ font-size:13px; letter-spacing:3px; font-weight:600; color:#d6d6d6; }}
+.hero-title {{ margin:0; font-family:'Bebas Neue', Impact, sans-serif; font-weight:400;
+  font-size:clamp(60px,7.5vw,112px); line-height:.88; letter-spacing:1px; max-width:760px; color:#fff; }}
+.hero-original {{ font-size:22px; color:#d6d6d6; margin-top:6px; unicode-bidi:plaintext; }}
+.meta-row {{ display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin-top:20px; font-size:15px; color:#d6d6d6; }}
+.match {{ color:#46d369; font-weight:700; }}
+.badge {{ display:inline-flex; align-items:center; gap:4px; border:1px solid rgba(255,255,255,.45); border-radius:3px; padding:2px 7px; font-size:12px; }}
+.badge.warn {{ border-color:#f5c26b; color:#f5c26b; }}
+.star {{ color:#f5c518; }}
+.hero-tagline {{ margin:18px 0 0; font-size:22px; font-style:italic; font-weight:500; max-width:640px; }}
+.hero-why {{ margin:10px 0 0; font-size:17px; line-height:1.55; color:#d6d6d6; max-width:600px; }}
 
-[data-testid="stChatMessage"] {
-  background: rgba(22,22,38,.6); border:1px solid rgba(255,255,255,.06); border-radius:16px;
-}
-section[data-testid="stSidebar"] { background: #10101c; border-right:1px solid rgba(255,255,255,.06); }
+/* vibe bar */
+.st-key-vibe_bar {{
+  position:relative; z-index:3; margin-top:-110px; background:rgba(35,35,35,.92);
+  border:1px solid #3a3a3a; border-radius:6px; padding:12px 18px; height:auto !important; flex:0 0 auto !important;
+}}
+.vibe-chips {{ display:flex; flex-wrap:wrap; align-items:center; gap:10px; }}
+.vibe-chips .label {{ font-size:12px; letter-spacing:2px; font-weight:700; color:#b3b3b3; margin-right:4px; }}
+.vibe-chips .chip {{ padding:7px 14px; border-radius:999px; background:#3a3a3a; font-size:13px; }}
+.vibe-chips .chip.on {{ background:#fff; color:#141414; font-weight:600; }}
+
+/* rows */
+.row-title {{ margin:36px 0 14px; font-size:22px; font-weight:700; color:#fff; }}
+.top-item {{ display:flex; align-items:flex-start; }}
+.top-rank {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:250px; line-height:.82; color:#141414;
+  -webkit-text-stroke:4px #6b6b6b; margin-right:-24px; margin-top:16px; }}
+.poster {{ position:relative; z-index:1; width:200px; height:290px; box-sizing:border-box; padding:14px; border-radius:4px;
+  display:flex; flex-direction:column; justify-content:space-between; box-shadow:0 10px 30px rgba(0,0,0,.5);
+  transition: transform .2s ease; }}
+.poster:hover {{ transform:scale(1.03); }}
+.poster-top {{ display:flex; align-items:center; justify-content:space-between; }}
+.poster-top .cm {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:20px; line-height:1; color:{ACCENT}; }}
+.poster-top .rate {{ font-size:12px; font-weight:700; background:rgba(0,0,0,.6); padding:3px 7px; border-radius:3px; }}
+.poster-title {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:36px; line-height:.9; color:#fff; overflow-wrap:anywhere; }}
+.poster-meta {{ font-size:12px; color:#e6e6e6; margin-top:8px; }}
+.top-tagline {{ font-size:13px; line-height:1.4; font-style:italic; color:#b3b3b3; margin:10px 0 2px; }}
+
+.stApp [class*="st-key-more_"] button {{
+  width:100%; height:152px; border-radius:4px; border:0; color:#fff; padding:14px 16px;
+  justify-content:flex-start; align-items:flex-end; text-align:left; transition: transform .2s ease;
+}}
+.stApp [class*="st-key-more_"] button:hover {{ transform:scale(1.04); color:#fff; }}
+.stApp [class*="st-key-more_"] button > div {{ width:100%; justify-content:flex-start; }}
+.stApp [class*="st-key-more_"] button p {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:28px; line-height:.95; letter-spacing:1px; }}
+.tile-meta {{ font-size:12px; color:#b3b3b3; margin-top:-6px; }}
+
+.mylist {{ display:flex; flex-wrap:wrap; gap:10px; }}
+.mylist a {{ padding:8px 14px; border-radius:4px; background:#2a2a2a; color:#fff !important; text-decoration:none; font-size:14px; }}
+.mylist a:hover {{ background:#3a3a3a; }}
+
+/* ask box */
+.st-key-ask_box {{ max-width:920px; background:#1f1f1f; border:1px solid #333; border-radius:8px; padding:24px 26px; margin-top:44px; }}
+.ask-title {{ font-size:20px; font-weight:700; }}
+.ask-sub {{ margin:4px 0 4px; font-size:14px; color:#b3b3b3; }}
+.stApp [class*="st-key-chip_"] button {{ min-height:36px; border-radius:999px; border:1px solid #4d4d4d; background:transparent; color:#e6e6e6; font-weight:500; padding:0 14px; }}
+.stApp [class*="st-key-chip_"] button:hover {{ border-color:#fff; color:#fff; background:transparent; }}
+.st-key-ask_box [data-testid="stForm"] {{ border:0; padding:0; }}
+[data-testid="stChatMessage"] {{ background:#181818; border:1px solid #2a2a2a; border-radius:8px; }}
+
+/* detail dialog */
+div[role="dialog"] {{ background:#181818; }}
+.d-banner {{ position:relative; border-radius:6px; padding:28px 32px 28px; min-height:240px; display:flex; flex-direction:column;
+  justify-content:flex-end; overflow:hidden; }}
+.d-banner .hero-art {{ top:10px; font-size:180px; }}
+.d-title {{ margin:0; font-family:'Bebas Neue', Impact, sans-serif; font-weight:400; font-size:72px; line-height:.88; color:#fff; position:relative; }}
+.reason {{ display:flex; gap:14px; margin:14px 0; }}
+.reason .bar {{ width:4px; flex:0 0 auto; border-radius:2px; background:{ACCENT}; }}
+.reason .bar.grey {{ background:#5a5a5a; }}
+.reason h4 {{ margin:0 0 4px; font-size:13px; letter-spacing:1.5px; color:#b3b3b3; font-weight:700; }}
+.reason p {{ margin:0; font-size:16px; line-height:1.55; color:#e6e6e6; }}
+.facts {{ font-size:14px; line-height:1.5; }}
+.facts div {{ margin-bottom:10px; }}
+.facts span {{ color:#8c8c8c; }}
+.facts a {{ color:#54b9c5; }}
+.like-card {{ border-radius:6px; overflow:hidden; background:#2a2a2a; }}
+.like-card .top {{ height:110px; display:flex; align-items:flex-end; padding:12px; box-sizing:border-box;
+  font-family:'Bebas Neue', Impact, sans-serif; font-size:26px; line-height:.9; color:#fff; }}
+.like-card .body {{ padding:12px 14px; font-size:14px; line-height:1.5; color:#d6d6d6; }}
+.like-card .body b {{ display:block; font-size:13px; color:#b3b3b3; font-weight:500; margin-bottom:4px; }}
+footer.cm-footer {{ padding:48px 0 8px; font-size:13px; color:#8c8c8c; }}
 </style>
 """,
     unsafe_allow_html=True,
 )
 
 
-# --------------------------------------------------------------------------- helpers
+# --------------------------------------------------------------------------- data helpers
 def secret_api_key():
     try:
         return st.secrets.get("GROQ_API_KEY")
@@ -241,25 +260,12 @@ def parse_json(text):
         return json.loads(match.group(0))
 
 
-def init_state():
-    defaults = {
-        "stage": "setup",
-        "profile": {},
-        "movies": [],
-        "seen_titles": [],
-        "chat": [],
-        "pending_question": None,
-    }
-    for k, v in defaults.items():
-        st.session_state.setdefault(k, v)
-
-
 def wanted_count(profile):
     strict = profile["language"] != "Any" or profile["era"] in ERA_RANGES
     return profile["count"] + (EXTRA_CANDIDATES if strict else 0)
 
 
-def build_prompt(profile, exclude, pool=None):
+def build_prompt(profile, exclude, pool=None, liked=None):
     genres = ", ".join(profile["genres"]) if profile["genres"] else "Any"
     exclude_txt = ", ".join(exclude) if exclude else "none"
     lang = profile["language"]
@@ -288,11 +294,12 @@ def build_prompt(profile, exclude, pool=None):
         if lang not in ("Any", "English")
         else "well-known, mainstream (IMDb ~7+)"
     )
+    liked_txt = f"- The user liked these earlier picks, so lean toward films in a similar spirit: {', '.join(liked)}\n" if liked else ""
     return f"""You are an explainable AI movie recommendation system.
 
 User profile:
 - Age: {profile['age']}
-- Mood: {profile['mood']} ({MOOD_RULES[profile['mood']]})
+- Mood: {profile['mood']} ({MOODS[profile['mood']]['rule']})
 - Preferred genres: {genres}
 - Language: {profile['language']}
 - Era: {profile['era']}
@@ -301,10 +308,10 @@ User profile:
 Rules:
 - Recommend ONLY real movies that are {popularity}.
 {hard_rules_txt}
-- Match the mood and the genres.
+- Match the mood and the genres. Order the list from best match to weakest match.
 - Content must be age-appropriate for the user's age.
 - Do NOT recommend any of these already-suggested titles: {exclude_txt}
-- Write the tagline, mood_match and genre_match in English.
+{liked_txt}- Write all text fields in English.
 {pool_txt}
 Return ONLY valid JSON, no extra text, with exactly {wanted_count(profile)} movies:
 {{"movies": [{{
@@ -314,17 +321,18 @@ Return ONLY valid JSON, no extra text, with exactly {wanted_count(profile)} movi
   "genres": ["Genre", "Genre"],
   "runtime": "2h 28m",
   "rating": 8.8,
-  "emoji": "exactly ONE emoji character, no words (e.g. 🚀)",
   "tagline": "a short, catchy one-line hook (no spoilers)",
-  "mood_match": "one sentence on why it fits the mood",
-  "genre_match": "one sentence on why it fits the genres/wishes"
+  "mood_match": "one or two sentences on why it fits the mood",
+  "genre_match": "one sentence on why it fits the genres/wishes",
+  "why_you": "one sentence on why it suits this particular viewer (their age and wishes)",
+  "heads_up": "one honest caveat: tone, pacing, intensity or content to expect"
 }}]}}"""
 
 
-def fetch_movies(client, model, profile, exclude, pool=None):
+def fetch_movies(client, model, profile, exclude, pool=None, liked=None):
     kwargs = dict(
         model=model,
-        messages=[{"role": "user", "content": build_prompt(profile, exclude, pool)}],
+        messages=[{"role": "user", "content": build_prompt(profile, exclude, pool, liked)}],
         temperature=0.8,
     )
     try:
@@ -447,7 +455,7 @@ def get_pool(profile, exclude):
 
 
 def title_variants(movie):
-    
+
     small = {"a", "an", "and", "at", "for", "in", "of", "on", "the", "to", "vs", "vs."}
 
     def cap_all(t):
@@ -469,7 +477,7 @@ def title_variants(movie):
             continue
         for v in (t, cap_keep_vs(t), cap_title(t), t.replace(".", ""), cap_keep_vs(t).replace(".", ""),
                   t.replace(" vs ", " vs. "), t.replace(" & ", " and "), t.replace(" and ", " & "),
-                  t.replace("\u2019", "'"), t.replace("'", "\u2019")):
+                  t.replace("’", "'"), t.replace("'", "’")):
             if v not in out:
                 out.append(v)
     return tuple(out[:14])
@@ -489,7 +497,7 @@ def parse_minutes(text):
 
 
 def verify_movies(movies, profile):
-    
+   
     try:
         found = wikidata_lookup(tuple(title_variants(m) for m in movies))
     except Exception:
@@ -511,14 +519,14 @@ def verify_movies(movies, profile):
         near = [c for c in cands if ai_year and abs(min(c["years"]) - ai_year) <= 2]
         pool = near or cands
         pool = [c for c in pool if lang_match(c)] or pool 
-        best = max(pool, key=lambda c: c["links"]) 
+        best = max(pool, key=lambda c: c["links"])  
         movie["year"] = min(best["years"])  
         if best["durations"]:
-          
+            
             durs = sorted(best["durations"])
             guess = parse_minutes(movie.get("runtime"))
             mins = min(durs, key=lambda d: abs(d - guess)) if guess else durs[len(durs) // 2]
-           
+        
             if guess and abs(mins - guess) <= 8:
                 mins = guess
             movie["runtime"] = fmt_runtime(mins)
@@ -550,74 +558,21 @@ def verify_movies(movies, profile):
     return [m for r, _, m in ranked if r > 0][: profile["count"]]
 
 
-def clean_emoji(movie):
-
-    em = str(movie.get("emoji") or "").strip()
-    if em and len(em) <= 8 and not re.search(r"[A-Za-z0-9\u0600-\u06FF]", em):
-        return em
-    for g in movie.get("genres") or []:
-        for name, icon in GENRES.items():
-            if name.lower() in str(g).lower():
-                return icon
-    return "🎬"
-
-
-def render_card(movie, idx):
-    e = lambda v: html.escape(str(v)) if v not in (None, "") else ""
-    title, year = e(movie.get("title")), e(movie.get("year"))
-    query = urllib.parse.quote_plus(f"{movie.get('title', '')} {movie.get('year', '')}")
-    chips = "".join(f'<span class="chip">{e(g)}</span>' for g in (movie.get("genres") or [])[:4])
-    if movie.get("languages"):
-        chips += f'<span class="chip lang">🗣 {e(", ".join(movie["languages"][:2]))}</span>'
-    original = str(movie.get("original_title") or "").strip()
-    original_html = (
-        f'<div class="original">{e(original)}</div>'
-        if original and original.lower() != str(movie.get("title", "")).strip().lower() else ""
+def stream_answer(client, model, question, history, focus=None):
+    movies_ctx = json.dumps(
+        [{k: m.get(k) for k in ("title", "year", "runtime", "genres", "languages", "tagline", "mood_match")}
+         for m in st.session_state.movies],
+        ensure_ascii=False,
     )
-    rating = movie.get("rating")
-    rating_html = f'<div class="rating" title="AI estimate">⭐ ~{e(rating)}</div>' if rating else ""
-    meta = " • ".join(x for x in [year, e(movie.get("runtime"))] if x)
-    if movie.get("verified"):
-        meta += ' <span class="verified" title="Year &amp; runtime checked against Wikidata">✓ verified</span>'
-    else:
-        meta += ' <span class="unverified" title="Could not verify — AI-provided details may be off">≈ unverified</span>'
-    imdb_url = (
-        f"https://www.imdb.com/title/{e(movie['imdb_id'])}/"
-        if movie.get("imdb_id") else f"https://www.imdb.com/find/?q={query}"
-    )
-    return f"""
-<div class="movie-card" style="animation-delay:{idx * 0.08:.2f}s">
-  <div class="poster" style="background:{GRADIENTS[idx % len(GRADIENTS)]}">
-    <div class="rank">#{idx + 1}</div>{rating_html}
-    <div class="emoji">{e(clean_emoji(movie))}</div>
-  </div>
-  <div class="card-body">
-    <h3>{title}</h3>{original_html}
-    <div class="meta">{meta}</div>
-    <div class="chips">{chips}</div>
-    <div class="tagline">“{e(movie.get('tagline'))}”</div>
-    <div class="why"><b>Mood:</b> {e(movie.get('mood_match'))}</div>
-    <div class="why"><b>Genre:</b> {e(movie.get('genre_match'))}</div>
-    <div class="links">
-      <a href="https://www.youtube.com/results?search_query={query}+trailer" target="_blank">▶ Trailer</a>
-      <a href="{imdb_url}" target="_blank">IMDb</a>
-    </div>
-  </div>
-</div>"""
-
-
-def stream_answer(client, model, question):
-    movies_ctx = json.dumps(st.session_state.movies, ensure_ascii=False)
     p = st.session_state.profile
     system = (
-        "You are a friendly, knowledgeable movie buddy continuing a conversation about recommendations "
+        "You are CineMatch, a friendly, knowledgeable movie buddy continuing a conversation about recommendations "
         f"you already gave. User profile: age {p['age']}, mood {p['mood']}, genres {', '.join(p['genres']) or 'any'}. "
-        f"The recommended movies are: {movies_ctx}. Focus on these movies unless the user asks for others. "
-        "Never reveal major spoilers unless asked. Keep answers concise and use markdown."
+        f"The recommended movies, best match first, are: {movies_ctx}. "
+        + (f"The user is asking specifically about '{focus}'. " if focus else "Focus on these movies unless the user asks for others. ")
+        + "Never reveal major spoilers unless asked. Keep answers concise and use markdown."
     )
-    msgs = [{"role": "system", "content": system}] + st.session_state.chat + [
-        {"role": "user", "content": question}
-    ]
+    msgs = [{"role": "system", "content": system}] + history + [{"role": "user", "content": question}]
     stream = client.chat.completions.create(model=model, messages=msgs, stream=True)
     for chunk in stream:
         delta = chunk.choices[0].delta.content
@@ -625,131 +580,334 @@ def stream_answer(client, model, question):
             yield delta
 
 
+# --------------------------------------------------------------------------- view helpers
+def esc(v):
+    return html.escape(str(v)) if v not in (None, "") else ""
+
+
+def lang_label(lang):
+    return "Any language" if lang == "Any" else lang
+
+
+def movie_color(m):
+    return POSTER_COLORS[sum(map(ord, str(m.get("title", "")))) % len(POSTER_COLORS)]
+
+
+def first_genre(m):
+    return (m.get("genres") or [""])[0]
+
+
+def watch_url(m):
+    return "https://www.justwatch.com/us/search?q=" + urllib.parse.quote_plus(str(m.get("title", "")))
+
+
+def imdb_url(m):
+    if m.get("imdb_id"):
+        return f"https://www.imdb.com/title/{m['imdb_id']}/"
+    return "https://www.imdb.com/find/?q=" + urllib.parse.quote_plus(f"{m.get('title', '')} {m.get('year', '')}")
+
+
+def meta_row(m, match_label=None):
+    parts = []
+    if match_label:
+        parts.append(f'<span class="match">{esc(match_label)}</span>')
+    parts += [f"<span>{esc(x)}</span>" for x in (m.get("year"), m.get("runtime")) if x]
+    if m.get("rating"):
+        parts.append(f'<span title="AI estimate"><span class="star">★</span> ~{esc(m["rating"])}</span>')
+    if m.get("verified"):
+        parts.append('<span class="badge" title="Year &amp; runtime checked against Wikidata">✓ Verified</span>')
+    else:
+        parts.append('<span class="badge warn" title="Could not verify on Wikidata">≈ Unverified</span>')
+    lang = (m.get("languages") or [None])[0] or (
+        st.session_state.profile.get("language") if st.session_state.profile.get("language") != "Any" else None)
+    if lang:
+        parts.append(f'<span class="badge">{esc(lang)}</span>')
+    return f'<div class="meta-row">{"".join(parts)}</div>'
+
+
+def original_title_html(m, cls="hero-original"):
+    original = str(m.get("original_title") or "").strip()
+    if original and original.lower() != str(m.get("title", "")).strip().lower():
+        return f'<div class="{cls}">{esc(original)}</div>'
+    return ""
+
+
+def toggle_in(list_key, title):
+    items = st.session_state[list_key]
+    if title in items:
+        items.remove(title)
+    else:
+        items.append(title)
+
+
+def init_state():
+    defaults = {
+        "stage": "setup",
+        "profile": {},
+        "movies": [],
+        "seen_titles": [],
+        "chat": [],
+        "film_chat": {},
+        "my_list": [],
+        "liked": [],
+        "detail_idx": 0,
+        "pending_question": None,
+        "mood_sel": "Thoughtful",
+    }
+    for k, v in defaults.items():
+        st.session_state.setdefault(k, v)
+
+
 def reset():
-    for k in ["stage", "profile", "movies", "seen_titles", "chat", "pending_question"]:
+    for k in ["stage", "profile", "movies", "seen_titles", "chat", "film_chat", "liked", "detail_idx",
+              "pending_question", "mood_sel"]:
         st.session_state.pop(k, None)
+
+
+def set_mood(name):
+    st.session_state.mood_sel = name
+
+
+def open_detail(idx):
+    st.session_state.detail_idx = idx
+    st.session_state.show_detail = True
+
+
+# --------------------------------------------------------------------------- detail dialog
+@st.dialog("Why this pick", width="large", on_dismiss="rerun")
+def detail_dialog(client, model):
+    movies = st.session_state.movies
+    idx = min(st.session_state.detail_idx, len(movies) - 1)
+    m = movies[idx]
+    title = m["title"]
+    p = st.session_state.profile
+    kicker = f"PICK #{idx + 1} OF {min(TOP_N, len(movies))}" if idx < TOP_N else "ALSO FITS YOUR VIBE"
+
+    st.markdown(
+        f"""<div class="d-banner" style="background: radial-gradient(circle at 80% 20%, rgba(255,255,255,.12), transparent 55%), {movie_color(m)}">
+  <div class="hero-art" aria-hidden="true">{esc(title)}</div>
+  <div class="kicker"><span class="cm">CM</span><span>{kicker}</span></div>
+  <h2 class="d-title">{esc(title)}</h2>{original_title_html(m)}
+</div>""",
+        unsafe_allow_html=True,
+    )
+
+    with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+        with st.container(key="watch_dialog", width="content"):
+            st.link_button("Where to watch", watch_url(m), icon=":material/play_arrow:")
+        in_list = title in st.session_state.my_list
+        if st.button("", key="round_dlist", icon=":material/check:" if in_list else ":material/add:",
+                     help="Remove from My list" if in_list else "Add to My list"):
+            toggle_in("my_list", title)
+            st.rerun(scope="fragment")
+        liked = title in st.session_state.liked
+        if st.button("", key="round_dlike", icon=":material/thumb_up:" if not liked else ":material/thumb_up_off_alt:",
+                     help="Undo good pick" if liked else "Good pick: more like this next time"):
+            toggle_in("liked", title)
+            st.rerun(scope="fragment")
+        if idx < TOP_N and len(movies) > TOP_N:
+            if st.button("Swap this pick", key="swap_pick", help="Replace it with the next best match"):
+                movies[idx] = movies.pop(TOP_N)
+                st.session_state.show_detail = False
+                st.rerun()
+
+    left, right = st.columns([2, 1], gap="large")
+    with left:
+        match = f"Top match for {p['mood']}" if idx == 0 else f"Great match for {p['mood']}"
+        st.markdown(
+            meta_row(m, match)
+            + f'<p class="hero-tagline" style="font-size:20px">“{esc(m.get("tagline"))}”</p>'
+            + "".join(
+                f'<div class="reason"><span class="bar{" grey" if grey else ""}"></span><div><h4>{h}</h4><p>{esc(t)}</p></div></div>'
+                for h, t, grey in (
+                    ("MOOD FIT", m.get("mood_match"), False),
+                    ("WHY YOU", m.get("why_you") or m.get("genre_match"), False),
+                    ("HEADS-UP", m.get("heads_up"), True),
+                )
+                if t
+            ),
+            unsafe_allow_html=True,
+        )
+    with right:
+        facts = [
+            ("Genre", ", ".join(m.get("genres") or []) or "—"),
+            ("Language", ", ".join(m.get("languages") or []) or lang_label(p["language"])),
+            ("Released", m.get("year") or "—"),
+            ("Runtime", m.get("runtime") or "—"),
+            ("Picked for", " · ".join([p["mood"], f"Age {p['age']}"] + (p["genres"][:2] or []))),
+            ("Model", model or "—"),
+        ]
+        st.markdown(
+            '<div class="facts">'
+            + "".join(f"<div><span>{k}: </span>{esc(v)}</div>" for k, v in facts)
+            + f'<div><span>IMDb: </span><a href="{imdb_url(m)}" target="_blank">Open page ↗</a></div></div>',
+            unsafe_allow_html=True,
+        )
+
+    others = [(j, o) for j, o in enumerate(movies[:TOP_N]) if j != idx]
+    if others:
+        st.markdown('<div class="row-title" style="margin-top:12px">Your other picks</div>', unsafe_allow_html=True)
+        cols = st.columns(len(others))
+        for col, (j, o) in zip(cols, others):
+            with col:
+                st.markdown(
+                    f'<div class="like-card"><div class="top" style="background:{movie_color(o)}">{esc(o["title"])}</div>'
+                    f'<div class="body"><b>#{j + 1} · {esc(o.get("year"))} · {esc(o.get("runtime"))}</b>“{esc(o.get("tagline"))}”</div></div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("Open", key=f"dother_{j}", type="tertiary", icon=":material/info:"):
+                    st.session_state.detail_idx = j
+                    st.rerun(scope="fragment")
+
+    similar = [(j, o) for j, o in enumerate(movies) if j >= TOP_N and j != idx][:3]
+    if similar:
+        st.markdown('<div class="row-title" style="margin-top:12px">More like this</div>', unsafe_allow_html=True)
+        cols = st.columns(3)
+        for col, (j, o) in zip(cols, similar):
+            with col:
+                st.markdown(
+                    f'<div class="like-card"><div class="top" style="background:{movie_color(o)}">{esc(o["title"])}</div>'
+                    f'<div class="body"><b>{esc(o.get("year"))} · {esc(first_genre(o))}</b>{esc(o.get("mood_match"))}</div></div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button("Open", key=f"dsim_{j}", type="tertiary", icon=":material/info:"):
+                    st.session_state.detail_idx = j
+                    st.rerun(scope="fragment")
+
+    st.divider()
+    history = st.session_state.film_chat.setdefault(title, [])
+    for msg in history:
+        with st.chat_message(msg["role"], avatar=":material/person:" if msg["role"] == "user" else ":material/movie:"):
+            st.markdown(msg["content"])
+    with st.form(f"ask_film_{idx}", clear_on_submit=True, border=False):
+        c1, c2 = st.columns([10, 1], vertical_alignment="bottom")
+        q = c1.text_input(f"Ask about {title}", placeholder="e.g. Is it too sad to watch alone?")
+        sent = c2.form_submit_button("", icon=":material/arrow_upward:", type="primary")
+    if sent and q.strip() and client:
+        with st.chat_message("user", avatar=":material/person:"):
+            st.markdown(q)
+        with st.chat_message("assistant", avatar=":material/movie:"):
+            try:
+                answer = st.write_stream(stream_answer(client, model, q, history, focus=title))
+            except Exception as ex:
+                answer = None
+                st.error(f"Something went wrong: {ex}")
+        if answer:
+            history += [{"role": "user", "content": q}, {"role": "assistant", "content": answer}]
 
 
 # --------------------------------------------------------------------------- app
 init_state()
 
-with st.sidebar:
-    st.markdown("### 🎬 CineMatch AI")
-    st.caption("Powered by Groq")
-    api_key = secret_api_key()
-    if not api_key:
-        st.info("No `GROQ_API_KEY` in secrets — paste one below.")
-        api_key = st.text_input("Groq API key", type="password", key="user_api_key")
+# ---------------- header: logo + model
+api_key = secret_api_key()
+client, model = None, None
+with st.container(key="header"):
+    h_left, h_right = st.columns([3, 2], vertical_alignment="bottom")
+    h_left.markdown('<div class="logo">CineMatch</div>', unsafe_allow_html=True)
+    with h_right:
+        if not api_key:
+            api_key = st.text_input("Groq API key", type="password", key="user_api_key",
+                                    placeholder="Paste a key, or add GROQ_API_KEY to secrets")
+        if api_key:
+            try:
+                models = available_models(api_key)
+                if models:
+                    client = Groq(api_key=api_key)
+                    model = st.selectbox("Model", models, key="model")
+                else:
+                    st.warning("No chat models are available for this key.")
+            except Exception as ex:
+                st.error(f"Couldn't reach Groq with this key: {ex}")
 
-    client, model = None, None
-    if api_key:
-        try:
-            models = available_models(api_key)
-            if models:
-                client = Groq(api_key=api_key)
-                model = st.selectbox("Model", models, key="model")
-            else:
-                st.warning("No chat models are available for this key.")
-        except Exception as ex:
-            st.error(f"Couldn't reach Groq with this key: {ex}")
-    if st.session_state.profile:
-        p = st.session_state.profile
-        st.divider()
-        st.markdown("**Your vibe**")
-        st.markdown(
-            f"{MOODS[p['mood']]} {p['mood']}  \n"
-            f"🎂 Age {p['age']}  \n"
-            f"🎞️ {', '.join(p['genres']) or 'Any genre'}  \n"
-            f"🌍 {p['language']} · 📅 {p['era']}"
-        )
-    if st.session_state.stage != "setup":
-        st.divider()
-        if st.button("↺ Start over", use_container_width=True):
-            reset()
+# ---------------- stage 1: pick your vibe
+if st.session_state.stage == "setup":
+    prof = st.session_state.profile
+    if prof and st.session_state.get("_prefilled") is not True:
+        st.session_state.mood_sel = prof.get("mood", "Thoughtful")
+        st.session_state._prefilled = True
+    sel = st.session_state.mood_sel
+
+    tile_css = "".join(
+        f".stApp .st-key-mood_{i} button{{background:{d['color']} !important;}}" for i, d in enumerate(MOODS.values())
+    )
+    sel_i = list(MOODS).index(sel)
+    tile_css += (f".stApp .st-key-mood_{sel_i} button{{opacity:1;outline:4px solid #ffffff;}}"
+                 f".st-key-mood_{sel_i} button p{{font-weight:700;}}")
+    st.markdown(f"<style>{tile_css}</style>", unsafe_allow_html=True)
+
+    st.markdown(
+        '<h1 style="text-align:center;margin:40px 0 36px;font-size:54px;font-weight:500;letter-spacing:-.5px;color:#fff">'
+        "What's your vibe tonight?</h1>",
+        unsafe_allow_html=True,
+    )
+    _, mid, _ = st.columns([1, 8, 1])
+    with mid:
+        cols = st.columns(len(MOODS))
+        for i, (name, d) in enumerate(MOODS.items()):
+            with cols[i]:
+                st.button(name, key=f"mood_{i}", icon=d["icon"], on_click=set_mood, args=(name,))
+
+    st.write("")
+    _, mid, _ = st.columns([1, 5, 1])
+    with mid:
+        with st.container(key="genre_pills"):
+            genres = st.pills("Genres", GENRES, selection_mode="multi", default=prof.get("genres") or ["Drama"],
+                              label_visibility="collapsed")
+
+    st.write("")
+    with st.container(key="filters"):
+        _, c1, c2, c3, c4, _ = st.columns([1.2, 0.8, 1.4, 1.4, 1.4, 1.2], vertical_alignment="bottom")
+        age = c1.number_input("Age", min_value=5, max_value=100, value=int(prof.get("age", 22)), step=1)
+        language = c2.selectbox("Language", LANGUAGES, index=LANGUAGES.index(prof.get("language", "Any")),
+                                format_func=lang_label)
+        era = c3.selectbox("Era", ERAS, index=ERAS.index(prof.get("era", "Any era")))
+        go = c4.button("Find my movies", type="primary", icon=":material/chevron_right:", use_container_width=True)
+        _, n1, _ = st.columns([1.2, 5, 1.2])
+        notes = n1.text_input("Anything else? (optional)", value=prof.get("notes", ""),
+                              placeholder="e.g. something like Interstellar, no gore, has a twist ending…")
+
+    if go:
+        if not client:
+            st.error("Add a working Groq API key at the top right to continue.")
+        else:
+            st.session_state.profile = {
+                "mood": sel,
+                "genres": genres or [],
+                "age": int(age),
+                "language": language,
+                "era": era,
+                "notes": notes.strip(),
+                "count": TOP_N + MORE_N,
+            }
+            st.session_state._prefilled = False
+            st.session_state.stage = "loading"
             st.rerun()
 
-
-st.markdown(
-    """
-<div class="hero">
-  <div class="badge">✨ AI-powered · Explainable picks</div>
-  <h1>Find your perfect movie</h1>
-  <p>Tell us your vibe, and we'll hand-pick films that match it — and explain why.</p>
-</div>""",
-    unsafe_allow_html=True,
-)
-
-# ---------------- setup stage
-if st.session_state.stage == "setup":
-    _, mid, _ = st.columns([1, 6, 1])
-    with mid:
-        with st.container(key="setup_panel"):
-            st.markdown('<div class="section-title"><span>01</span> · How are you feeling?</div>', unsafe_allow_html=True)
-            mood = st.pills(
-                "Mood", list(MOODS), default="Happy", selection_mode="single",
-                format_func=lambda m: f"{MOODS[m]} {m}", label_visibility="collapsed",
-            )
-
-            st.markdown('<div class="section-title"><span>02</span> · Pick your genres</div>', unsafe_allow_html=True)
-            genres = st.pills(
-                "Genres", list(GENRES), selection_mode="multi",
-                format_func=lambda g: f"{GENRES[g]} {g}", label_visibility="collapsed",
-            )
-
-            st.markdown('<div class="section-title"><span>03</span> · A few details</div>', unsafe_allow_html=True)
-            c1, c2, c3 = st.columns(3)
-            age = c1.number_input("Your age", min_value=5, max_value=100, value=22, step=1)
-            language = c2.selectbox("Language", LANGUAGES)
-            era = c3.selectbox("Era", ERAS)
-
-            c4, c5 = st.columns([3, 1])
-            notes = c4.text_input(
-                "Anything else? (optional)",
-                placeholder="e.g. something like Interstellar, no gore, has a twist ending…",
-            )
-            count = c5.slider("How many?", 3, 6, 3)
-
-            st.write("")
-            go = st.button("🍿 Get my recommendations", type="primary", use_container_width=True)
-
-        if go:
-            if not client:
-                st.error("Add a working Groq API key in the sidebar to continue.")
-            else:
-                st.session_state.profile = {
-                    "mood": mood or "Happy",
-                    "genres": genres or [],
-                    "age": int(age),
-                    "language": language,
-                    "era": era,
-                    "notes": notes.strip(),
-                    "count": count,
-                }
-                st.session_state.stage = "loading"
-                st.rerun()
-
-# ---------------- loading stage (also used for "new picks")
+# ---------------- loading (also used for "different picks")
 if st.session_state.stage == "loading":
-    lang_name = st.session_state.profile.get("language", "Any")
+    profile = st.session_state.profile
+    lang_name = profile.get("language", "Any")
     spinner_txt = (
-        f"🎞️ Finding real {lang_name} films and your perfect matches… (first search for a language can take ~15s)"
-        if lang_name not in ("Any", "English") else "🎞️ Rolling the film… finding your perfect matches"
+        f"Finding real {lang_name} films for your {profile['mood'].lower()} mood… (the first search for a language can take ~15s)"
+        if lang_name not in ("Any", "English") else f"Finding films for your {profile['mood'].lower()} mood…"
     )
-    with st.spinner(spinner_txt):
-        profile = st.session_state.profile
+    st.markdown('<div style="height:18vh"></div>', unsafe_allow_html=True)
+    _, mid, _ = st.columns([1, 2, 1])
+    with mid, st.spinner(spinner_txt):
         movies, tried = [], list(st.session_state.seen_titles)
         try:
             for _ in range(2): 
                 pool = get_pool(profile, tried)
-                batch = fetch_movies(client, model, profile, tried, pool)
+                batch = fetch_movies(client, model, profile, tried, pool, st.session_state.liked)
                 tried += [m["title"] for m in batch]
                 movies += verify_movies(batch, profile)
-                if len(movies) >= profile["count"]:
+                if len(movies) >= TOP_N + 3:
                     break
             movies = movies[: profile["count"]]
             if not movies:
                 st.warning(
-                    f"Couldn't find {'' if profile['language'] == 'Any' else profile['language'] + ' '}films matching all your choices. "
+                    f"Couldn't find {'' if lang_name == 'Any' else lang_name + ' '}films matching all your choices. "
                     "Try fewer genres or a wider era."
                 )
         except Exception as ex:
@@ -762,74 +920,162 @@ if st.session_state.stage == "loading":
         st.session_state.stage = "results"
         st.rerun()
     else:
-        if st.button("Try again", type="primary"):
-            st.rerun()
-        if st.button("Back"):
-            st.session_state.stage = "setup"
-            st.rerun()
+        with mid:
+            b1, b2 = st.columns(2)
+            if b1.button("Try again", type="primary", use_container_width=True):
+                st.rerun()
+            if b2.button("Edit vibe", use_container_width=True):
+                st.session_state.stage = "setup"
+                st.rerun()
 
-# ---------------- results stage
+# ---------------- stage 2: tonight's picks
 if st.session_state.stage == "results":
     p = st.session_state.profile
+    movies = st.session_state.movies
+    top, more = movies[:TOP_N], movies[TOP_N:]
+    hero = top[0]
+
     st.markdown(
-        f'<div class="profile-line">Picks for a <b>{MOODS[p["mood"]]} {p["mood"].lower()}</b> mood'
-        f'{" · <b>" + html.escape(", ".join(p["genres"])) + "</b>" if p["genres"] else ""}</div>',
+        f"""<style>
+.st-key-hero {{
+  background:
+    linear-gradient(90deg, #141414 0%, rgba(20,20,20,.9) 30%, rgba(20,20,20,.25) 65%, rgba(20,20,20,0) 100%),
+    linear-gradient(0deg, #141414 6%, rgba(20,20,20,0) 45%),
+    radial-gradient(circle at 78% 30%, rgba(255,255,255,.14), transparent 55%),
+    {movie_color(hero)};
+}}
+{"".join(f".stApp .st-key-more_{j} button{{background:{movie_color(o)} !important;}}" for j, o in enumerate(movies) if j >= TOP_N)}
+</style>""",
         unsafe_allow_html=True,
     )
 
-    movies = st.session_state.movies
-    per_row = 3
-    for start in range(0, len(movies), per_row):
-        cols = st.columns(per_row, gap="medium")
-        for i, movie in enumerate(movies[start:start + per_row]):
-            with cols[i]:
-                st.markdown(render_card(movie, start + i), unsafe_allow_html=True)
-        st.write("")
+    with st.container(key="hero"):
+        st.markdown(
+            f"""<div class="hero-art" aria-hidden="true">{esc(hero['title'])}</div>
+<div class="kicker"><span class="cm">CM</span><span>PICK #1 FOR TONIGHT</span></div>
+<h1 class="hero-title">{esc(hero['title'])}</h1>{original_title_html(hero)}
+{meta_row(hero, f"Top match for {p['mood']}")}
+<p class="hero-tagline">“{esc(hero.get('tagline'))}”</p>
+<p class="hero-why">{esc(hero.get('mood_match'))}</p>""",
+            unsafe_allow_html=True,
+        )
+        with st.container(horizontal=True, vertical_alignment="center", gap="small"):
+            with st.container(key="watch_hero", width="content"):
+                st.link_button("Where to watch", watch_url(hero), icon=":material/play_arrow:")
+            st.button("Why this pick", key="why_hero", icon=":material/info:", on_click=open_detail, args=(0,))
+            in_list = hero["title"] in st.session_state.my_list
+            st.button("", key="round_hlist", icon=":material/check:" if in_list else ":material/add:",
+                      help="Remove from My list" if in_list else "Add to My list",
+                      on_click=toggle_in, args=("my_list", hero["title"]))
+            liked = hero["title"] in st.session_state.liked
+            st.button("", key="round_hlike", icon=":material/thumb_up:" if not liked else ":material/thumb_up_off_alt:",
+                      help="Undo good pick" if liked else "Good pick: more like this next time",
+                      on_click=toggle_in, args=("liked", hero["title"]))
 
-    _, b1, b2, _ = st.columns([2, 2, 2, 2])
-    if b1.button("🔄 Show me different picks", use_container_width=True, type="primary"):
-        st.session_state.stage = "loading"
-        st.rerun()
-    if b2.button("✏️ Change preferences", use_container_width=True):
-        reset()
-        st.rerun()
-
-    st.divider()
-    st.markdown('<div class="section-title"><span>💬</span> Ask about these picks</div>', unsafe_allow_html=True)
-
-    suggestions = [
-        "Which one should I watch tonight?",
-        "Are these good to watch with family?",
-        "Recommend something similar to #1",
-        "Tell me more about #2 (no spoilers)",
-    ]
-    if not st.session_state.chat:
-        sc = st.columns(len(suggestions))
-        for col, s in zip(sc, suggestions):
-            if col.button(s, use_container_width=True):
-                st.session_state.pending_question = s
+    
+    with st.container(key="vibe_bar"), st.container(horizontal=True, vertical_alignment="center",
+                                                    horizontal_alignment="distribute"):
+        chips = [f'<span class="chip on">{esc(p["mood"])}</span>', f'<span class="chip">Age {p["age"]}</span>']
+        chips += [f'<span class="chip">{esc(g)}</span>' for g in p["genres"]] or ['<span class="chip">Any genre</span>']
+        chips += [f'<span class="chip">{esc(lang_label(p["language"]))}</span>', f'<span class="chip">{esc(p["era"])}</span>']
+        st.markdown(f'<div class="vibe-chips"><span class="label">YOUR VIBE</span>{"".join(chips)}</div>',
+                    unsafe_allow_html=True, width="content")
+        with st.container(horizontal=True, width="content", gap="small"):
+            if st.button("Different picks", type="tertiary", icon=":material/autorenew:"):
+                st.session_state.stage = "loading"
+                st.rerun()
+            if st.button("Edit vibe", type="tertiary", icon=":material/tune:"):
+                st.session_state.stage = "setup"
+                st.rerun()
+            if st.button("Start over", type="tertiary", icon=":material/restart_alt:"):
+                reset()
                 st.rerun()
 
-    for msg in st.session_state.chat:
-        with st.chat_message(msg["role"], avatar="🧑" if msg["role"] == "user" else "🎬"):
-            st.markdown(msg["content"])
+    
+    st.markdown(f'<div class="row-title">Top {len(top)} for your {esc(p["mood"].lower())} mood</div>',
+                unsafe_allow_html=True)
+    cols = st.columns(TOP_N, gap="medium")
+    for i, m in enumerate(top):
+        with cols[i]:
+            rating = f'<span class="rate">★ ~{esc(m["rating"])}</span>' if m.get("rating") else ""
+            meta = " · ".join(esc(x) for x in (m.get("year"), m.get("runtime"), first_genre(m)) if x)
+            st.markdown(
+                f"""<div class="top-item">
+  <span class="top-rank" aria-hidden="true">{i + 1}</span>
+  <div>
+    <div class="poster" style="background:{movie_color(m)}">
+      <div class="poster-top"><span class="cm">CM</span>{rating}</div>
+      <div><div class="poster-title">{esc(m['title'])}</div><div class="poster-meta">{meta}</div></div>
+    </div>
+    <div class="top-tagline" style="width:200px">“{esc(m.get('tagline'))}”</div>
+  </div>
+</div>""",
+                unsafe_allow_html=True,
+            )
+            st.button("More info", key=f"info_{i}", type="tertiary", icon=":material/info:",
+                      on_click=open_detail, args=(i,))
 
-    typed = st.chat_input("Ask anything about these movies…")
-    question = typed or st.session_state.pending_question
-    st.session_state.pending_question = None
+   
+    if more:
+        st.markdown('<div class="row-title">Also fits your vibe</div>', unsafe_allow_html=True)
+        cols = st.columns(MORE_N, gap="small")
+        for k, m in enumerate(more[:MORE_N]):
+            j = TOP_N + k
+            with cols[k]:
+                st.button(m["title"], key=f"more_{j}", on_click=open_detail, args=(j,), width="stretch")
+                st.markdown(f'<div class="tile-meta">{" · ".join(esc(x) for x in (m.get("year"), first_genre(m)) if x)}</div>',
+                            unsafe_allow_html=True)
 
-    if question:
-        with st.chat_message("user", avatar="🧑"):
-            st.markdown(question)
-        with st.chat_message("assistant", avatar="🎬"):
-            try:
-                answer = st.write_stream(stream_answer(client, model, question))
-            except Exception as ex:
-                answer = None
-                st.error(f"Something went wrong: {ex}")
-        if answer:
-            st.session_state.chat += [
-                {"role": "user", "content": question},
-                {"role": "assistant", "content": answer},
-            ]
-            st.rerun()
+    # my list
+    if st.session_state.my_list:
+        st.markdown('<div class="row-title">My list</div>', unsafe_allow_html=True)
+        by_title = {m["title"]: m for m in movies}
+        links = "".join(
+            f'<a href="{imdb_url(by_title.get(t, {"title": t}))}" target="_blank">{esc(t)}</a>'
+            for t in st.session_state.my_list
+        )
+        st.markdown(f'<div class="mylist">{links}</div>', unsafe_allow_html=True)
+
+    # ask box
+    with st.container(key="ask_box"):
+        st.markdown(
+            '<div class="ask-title">Ask CineMatch about these picks</div>'
+            '<div class="ask-sub">Compare them, check what to expect, or nudge the vibe.</div>',
+            unsafe_allow_html=True,
+        )
+        with st.form("ask_form", clear_on_submit=True, border=False):
+            c1, c2 = st.columns([12, 1], vertical_alignment="bottom")
+            typed = c1.text_input("Question", label_visibility="collapsed",
+                                  placeholder="e.g. Which one is the least heavy for a weeknight?")
+            sent = c2.form_submit_button("", icon=":material/arrow_upward:", type="primary", use_container_width=True)
+        with st.container(horizontal=True, gap="small"):
+            for n, s in enumerate(CHAT_SUGGESTIONS):
+                if st.button(s, key=f"chip_{n}"):
+                    st.session_state.pending_question = s
+
+        for msg in st.session_state.chat:
+            with st.chat_message(msg["role"], avatar=":material/person:" if msg["role"] == "user" else ":material/movie:"):
+                st.markdown(msg["content"])
+
+        question = (typed.strip() if sent else "") or st.session_state.pending_question
+        st.session_state.pending_question = None
+        if question and client:
+            with st.chat_message("user", avatar=":material/person:"):
+                st.markdown(question)
+            with st.chat_message("assistant", avatar=":material/movie:"):
+                try:
+                    answer = st.write_stream(stream_answer(client, model, question, st.session_state.chat))
+                except Exception as ex:
+                    answer = None
+                    st.error(f"Something went wrong: {ex}")
+            if answer:
+                st.session_state.chat += [
+                    {"role": "user", "content": question},
+                    {"role": "assistant", "content": answer},
+                ]
+
+    st.markdown(f'<footer class="cm-footer">Powered by Groq · {esc(model)} · Facts checked against Wikidata</footer>',
+                unsafe_allow_html=True)
+
+    if st.session_state.pop("show_detail", False) and movies:
+        detail_dialog(client, model)
