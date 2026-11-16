@@ -146,8 +146,8 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ d
 .kicker {{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }}
 .kicker .cm {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:24px; line-height:1; color:{ACCENT}; }}
 .kicker span:last-child {{ font-size:13px; letter-spacing:3px; font-weight:600; color:#d6d6d6; }}
-.hero-title {{ margin:0; font-family:'Bebas Neue', Impact, sans-serif; font-weight:400;
-  font-size:clamp(60px,7.5vw,112px); line-height:.88; letter-spacing:1px; max-width:760px; color:#fff; }}
+.hero-title {{ margin:0; font-family:'Bebas Neue', Impact, sans-serif !important; font-weight:400 !important; padding:0 !important;
+  font-size:clamp(60px,7.5vw,112px) !important; line-height:.88 !important; letter-spacing:1px; max-width:760px; color:#fff; }}
 .hero-original {{ font-size:22px; color:#d6d6d6; margin-top:6px; unicode-bidi:plaintext; }}
 .meta-row {{ display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin-top:20px; font-size:15px; color:#d6d6d6; }}
 .match {{ color:#46d369; font-weight:700; }}
@@ -181,6 +181,21 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ d
 .poster-top .rate {{ font-size:12px; font-weight:700; background:rgba(0,0,0,.6); padding:3px 7px; border-radius:3px; }}
 .poster-title {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:36px; line-height:.9; color:#fff; overflow-wrap:anywhere; }}
 .poster-meta {{ font-size:12px; color:#e6e6e6; margin-top:8px; }}
+.top-name {{ width:200px; font-size:15px; font-weight:700; color:#fff; margin-top:10px; }}
+.hero-poster {{ width:100% !important; max-width:240px !important; aspect-ratio:2/3; object-fit:cover; border-radius:6px;
+  box-shadow:0 24px 60px rgba(0,0,0,.6); display:block; margin-left:auto; }}
+.st-key-hero {{ isolation:isolate; }}
+.st-key-hero::after {{ content:""; position:absolute; inset:0; z-index:-1; pointer-events:none;
+  background: linear-gradient(90deg, #141414 0%, rgba(20,20,20,.9) 30%, rgba(20,20,20,.35) 65%, rgba(20,20,20,.15) 100%),
+              linear-gradient(0deg, #141414 6%, rgba(20,20,20,0) 45%); }}
+.d-banner > .kicker, .d-banner > .hero-original {{ position:relative; z-index:1; }}
+.d-banner {{ padding-right:190px !important; }}
+.st-key-hero::before {{ content:""; position:absolute; inset:-40px; z-index:-1; background:var(--hero-bg);
+  filter: blur(var(--hero-blur)); transform: scale(1.05); }}
+.d-blur {{ position:absolute; inset:-40px; background-size:cover; background-position:center 25%;
+  filter:blur(22px) brightness(.55); }}
+.d-poster {{ position:absolute; right:28px; bottom:24px; width:130px; aspect-ratio:2/3; object-fit:cover;
+  border-radius:4px; box-shadow:0 12px 30px rgba(0,0,0,.6); }}
 .top-tagline {{ font-size:13px; line-height:1.4; font-style:italic; color:#b3b3b3; margin:10px 0 2px; }}
 
 .stApp [class*="st-key-more_"] button {{
@@ -210,7 +225,7 @@ div[role="dialog"] {{ background:#181818; }}
 .d-banner {{ position:relative; border-radius:6px; padding:28px 32px 28px; min-height:240px; display:flex; flex-direction:column;
   justify-content:flex-end; overflow:hidden; }}
 .d-banner .hero-art {{ top:10px; font-size:180px; }}
-.d-title {{ margin:0; font-family:'Bebas Neue', Impact, sans-serif; font-weight:400; font-size:72px; line-height:.88; color:#fff; position:relative; }}
+.d-title {{ margin:0; font-family:'Bebas Neue', Impact, sans-serif !important; font-weight:400 !important; padding:0 !important; font-size:72px !important; line-height:.88 !important; color:#fff; position:relative; }}
 .reason {{ display:flex; gap:14px; margin:14px 0; }}
 .reason .bar {{ width:4px; flex:0 0 auto; border-radius:2px; background:{ACCENT}; }}
 .reason .bar.grey {{ background:#5a5a5a; }}
@@ -364,13 +379,14 @@ def wikidata_lookup(title_variants):
         for t in variants
         for lang in ("en", "mul")
     )
-    query = f"""SELECT ?i ?item ?date ?dur ?imdb ?links ?langLabel WHERE {{
+    query = f"""SELECT ?i ?item ?date ?dur ?imdb ?links ?langLabel ?wiki WHERE {{
   VALUES (?i ?label) {{ {values} }}
   {{ ?item rdfs:label ?label }} UNION {{ ?item skos:altLabel ?label }}
   ?item wdt:P57 [] ; wdt:P577 ?date ; wikibase:sitelinks ?links .
   OPTIONAL {{ ?item wdt:P2047 ?dur }}
   OPTIONAL {{ ?item wdt:P345 ?imdb }}
   OPTIONAL {{ ?item wdt:P364 ?lang . ?lang rdfs:label ?langLabel FILTER(lang(?langLabel) = "en") }}
+  OPTIONAL {{ ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> ; schema:name ?wiki }}
 }}"""
     r = requests.post(WIKIDATA_SPARQL, data={"query": query}, headers=HTTP_HEADERS, timeout=15)
     r.raise_for_status()
@@ -379,9 +395,11 @@ def wikidata_lookup(title_variants):
         i, qid = int(b["i"]["value"]), b["item"]["value"].rsplit("/", 1)[-1]
         c = found.setdefault(i, {}).setdefault(
             qid,
-            {"years": set(), "durations": set(), "languages": set(), "imdb": None,
+            {"years": set(), "durations": set(), "languages": set(), "imdb": None, "wiki": None,
              "links": int(b["links"]["value"])},
         )
+        if "wiki" in b:
+            c["wiki"] = b["wiki"]["value"]
         if "langLabel" in b:
             c["languages"].add(b["langLabel"]["value"])
         c["years"].add(int(b["date"]["value"][:4]))
@@ -533,6 +551,7 @@ def verify_movies(movies, profile):
         elif parse_minutes(movie.get("runtime")):
             movie["runtime"] = fmt_runtime(parse_minutes(movie.get("runtime")))
         movie["imdb_id"] = best["imdb"]
+        movie["wiki"] = best.get("wiki")
         movie["languages"] = sorted(best["languages"])
         movie["lang_ok"] = lang_match(best) if best["languages"] else None
         movie["verified"] = True
@@ -556,6 +575,47 @@ def verify_movies(movies, profile):
 
     ranked = sorted(((rank(m), i, m) for i, m in enumerate(movies)), key=lambda x: (-x[0], x[1]))
     return [m for r, _, m in ranked if r > 0][: profile["count"]]
+
+
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def wikipedia_posters(wiki_titles):
+    """Poster image for each English Wikipedia article (the infobox image), in one request."""
+    if not wiki_titles:
+        return {}
+    r = requests.get(
+        "https://en.wikipedia.org/w/api.php",
+        params=dict(action="query", titles="|".join(wiki_titles), prop="pageimages", piprop="thumbnail",
+                    pithumbsize=500, pilicense="any", redirects=1, format="json", formatversion=2),
+        headers={"User-Agent": HTTP_HEADERS["User-Agent"]},
+        timeout=15,
+    )
+    r.raise_for_status()
+    q = r.json().get("query", {})
+    alias = {}  # requested title -> final page title (after normalising / redirects)
+    for step in q.get("normalized", []) + q.get("redirects", []):
+        alias[step["from"]] = step["to"]
+    by_page = {p["title"]: p.get("thumbnail", {}).get("source") for p in q.get("pages", [])}
+    out = {}
+    for t in wiki_titles:
+        final = t
+        while final in alias:
+            final = alias[final]
+        if by_page.get(final):
+            out[t] = by_page[final]
+    return out
+
+
+def attach_posters(movies):
+    """Add a 'poster' URL to every film we could match to a Wikipedia article."""
+    titles = tuple(dict.fromkeys(m["wiki"] for m in movies if m.get("wiki")))[:50]
+    try:
+        found = wikipedia_posters(titles)
+    except Exception:
+        found = {}  
+    for m in movies:
+        if m.get("wiki") in found:
+            m["poster"] = found[m["wiki"]]
+    return movies
 
 
 def stream_answer(client, model, question, history, focus=None):
@@ -591,6 +651,17 @@ def lang_label(lang):
 
 def movie_color(m):
     return POSTER_COLORS[sum(map(ord, str(m.get("title", "")))) % len(POSTER_COLORS)]
+
+
+def css_url(u):
+    return "url('" + str(u).replace("'", "%27").replace('"', "%22").replace(" ", "%20") + "')"
+
+
+def poster_bg(m, overlay="linear-gradient(0deg, rgba(0,0,0,.85) 0%, rgba(0,0,0,0) 55%)", pos="center 20%"):
+    """CSS background for a card: the film's poster (if any) over its fallback colour."""
+    if m.get("poster"):
+        return f"{overlay}, {css_url(m['poster'])} {pos} / cover no-repeat, {movie_color(m)}"
+    return movie_color(m)
 
 
 def first_genre(m):
@@ -685,7 +756,8 @@ def detail_dialog(client, model):
 
     st.markdown(
         f"""<div class="d-banner" style="background: radial-gradient(circle at 80% 20%, rgba(255,255,255,.12), transparent 55%), {movie_color(m)}">
-  <div class="hero-art" aria-hidden="true">{esc(title)}</div>
+  {f'<div class="d-blur" style="background-image:{css_url(m["poster"])}"></div><img class="d-poster" src="{esc(m["poster"])}" alt="Poster for {esc(title)}">'
+   if m.get("poster") else f'<div class="hero-art" aria-hidden="true">{esc(title)}</div>'}
   <div class="kicker"><span class="cm">CM</span><span>{kicker}</span></div>
   <h2 class="d-title">{esc(title)}</h2>{original_title_html(m)}
 </div>""",
@@ -750,7 +822,7 @@ def detail_dialog(client, model):
         for col, (j, o) in zip(cols, others):
             with col:
                 st.markdown(
-                    f'<div class="like-card"><div class="top" style="background:{movie_color(o)}">{esc(o["title"])}</div>'
+                    f'<div class="like-card"><div class="top" style="background:{poster_bg(o, pos="center 25%")}">{esc(o["title"])}</div>'
                     f'<div class="body"><b>#{j + 1} · {esc(o.get("year"))} · {esc(o.get("runtime"))}</b>“{esc(o.get("tagline"))}”</div></div>',
                     unsafe_allow_html=True,
                 )
@@ -765,7 +837,7 @@ def detail_dialog(client, model):
         for col, (j, o) in zip(cols, similar):
             with col:
                 st.markdown(
-                    f'<div class="like-card"><div class="top" style="background:{movie_color(o)}">{esc(o["title"])}</div>'
+                    f'<div class="like-card"><div class="top" style="background:{poster_bg(o, pos="center 25%")}">{esc(o["title"])}</div>'
                     f'<div class="body"><b>{esc(o.get("year"))} · {esc(first_genre(o))}</b>{esc(o.get("mood_match"))}</div></div>',
                     unsafe_allow_html=True,
                 )
@@ -903,7 +975,7 @@ if st.session_state.stage == "loading":
                 movies += verify_movies(batch, profile)
                 if len(movies) >= TOP_N + 3:
                     break
-            movies = movies[: profile["count"]]
+            movies = attach_posters(movies[: profile["count"]])
             if not movies:
                 st.warning(
                     f"Couldn't find {'' if lang_name == 'Any' else lang_name + ' '}films matching all your choices. "
@@ -937,20 +1009,22 @@ if st.session_state.stage == "results":
     st.markdown(
         f"""<style>
 .st-key-hero {{
-  background:
-    linear-gradient(90deg, #141414 0%, rgba(20,20,20,.9) 30%, rgba(20,20,20,.25) 65%, rgba(20,20,20,0) 100%),
-    linear-gradient(0deg, #141414 6%, rgba(20,20,20,0) 45%),
-    radial-gradient(circle at 78% 30%, rgba(255,255,255,.14), transparent 55%),
-    {movie_color(hero)};
+  --hero-bg: {poster_bg(hero, "radial-gradient(circle at 78% 30%, rgba(255,255,255,.10), transparent 55%)", "center 30%")};
+  --hero-blur: {"28px" if hero.get("poster") else "0px"};
 }}
-{"".join(f".stApp .st-key-more_{j} button{{background:{movie_color(o)} !important;}}" for j, o in enumerate(movies) if j >= TOP_N)}
+{"".join(f".stApp .st-key-more_{j} button{{background:{poster_bg(o, pos='center 25%')} !important;}}" for j, o in enumerate(movies) if j >= TOP_N)}
 </style>""",
         unsafe_allow_html=True,
     )
 
     with st.container(key="hero"):
+      hero_text, hero_img = st.columns([3, 1], vertical_alignment="bottom")
+      if hero.get("poster"):
+          hero_img.markdown(f'<img class="hero-poster" src="{esc(hero["poster"])}" alt="Poster for {esc(hero["title"])}">',
+                            unsafe_allow_html=True)
+      with hero_text:
         st.markdown(
-            f"""<div class="hero-art" aria-hidden="true">{esc(hero['title'])}</div>
+            f"""{"" if hero.get("poster") else f'<div class="hero-art" aria-hidden="true">{esc(hero["title"])}</div>'}
 <div class="kicker"><span class="cm">CM</span><span>PICK #1 FOR TONIGHT</span></div>
 <h1 class="hero-title">{esc(hero['title'])}</h1>{original_title_html(hero)}
 {meta_row(hero, f"Top match for {p['mood']}")}
@@ -1002,10 +1076,11 @@ if st.session_state.stage == "results":
                 f"""<div class="top-item">
   <span class="top-rank" aria-hidden="true">{i + 1}</span>
   <div>
-    <div class="poster" style="background:{movie_color(m)}">
+    <div class="poster" role="img" aria-label="{esc(m['title'])}" style="background:{poster_bg(m)}">
       <div class="poster-top"><span class="cm">CM</span>{rating}</div>
-      <div><div class="poster-title">{esc(m['title'])}</div><div class="poster-meta">{meta}</div></div>
+      <div>{"" if m.get("poster") else f'<div class="poster-title">{esc(m["title"])}</div>'}<div class="poster-meta">{meta}</div></div>
     </div>
+    {f'<div class="top-name">{esc(m["title"])}</div>' if m.get("poster") else ""}
     <div class="top-tagline" style="width:200px">“{esc(m.get('tagline'))}”</div>
   </div>
 </div>""",
