@@ -761,16 +761,45 @@ def wikipedia_posters(wiki_titles):
     return out
 
 
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def tvmaze_poster(imdb_id, title):
+    
+    headers = {"User-Agent": HTTP_HEADERS["User-Agent"]}
+    try:
+        r = None
+        if imdb_id:
+            r = requests.get("https://api.tvmaze.com/lookup/shows", params={"imdb": imdb_id}, headers=headers, timeout=8)
+        if r is None or not r.ok:
+            r = requests.get("https://api.tvmaze.com/singlesearch/shows", params={"q": title}, headers=headers, timeout=8)
+        if not r.ok:
+            return None
+        image = r.json().get("image") or {}
+        return image.get("original") or image.get("medium")
+    except Exception:
+        return None
+
+
 def attach_posters(movies):
-    """Add a 'poster' URL to every film we could match to a Wikipedia article."""
-    titles = tuple(dict.fromkeys(m["wiki"] for m in movies if m.get("wiki")))[:50]
+    """Add a 'poster' URL: TVmaze for series, the Wikipedia infobox image for films (and as a fallback)."""
+    def guesses(m):
+        # Unverified films have no known article, so try the usual Wikipedia naming patterns.
+        if m.get("wiki"):
+            return [m["wiki"]]
+        t, y = str(m.get("title", "")).strip(), str(m.get("year", "")).strip()[:4]
+        return [f"{t} ({y} film)", f"{t} (film)", t] if t else []
+
+    titles = tuple(dict.fromkeys(g for m in movies for g in guesses(m)))[:50]
     try:
         found = wikipedia_posters(titles)
     except Exception:
         found = {}  
     for m in movies:
-        if m.get("wiki") in found:
-            m["poster"] = found[m["wiki"]]
+        series = m.get("is_series") or str(m.get("type", "")).lower().startswith("series")
+        poster = tvmaze_poster(m.get("imdb_id"), m["title"]) if series else None
+        wiki_poster = next((found[g] for g in guesses(m) if g in found), None)
+        m["poster"] = poster or wiki_poster or m.get("poster")
+        if not m["poster"]:
+            m.pop("poster")
     return movies
 
 
@@ -800,6 +829,11 @@ def stream_answer(client, model, question, history, focus=None):
 # --------------------------------------------------------------------------- view helpers
 def esc(v):
     return html.escape(str(v)) if v not in (None, "") else ""
+
+
+def clean_html(block):
+    
+    return " ".join(line.strip() for line in block.splitlines() if line.strip())
 
 
 def lang_label(lang):
@@ -932,12 +966,12 @@ def detail_dialog(client, model):
     kicker = f"PICK #{idx + 1} OF {min(TOP_N, len(movies))}" if idx < TOP_N else "ALSO FITS YOUR VIBE"
 
     st.markdown(
-        f"""<div class="d-banner" style="background: radial-gradient(circle at 80% 20%, rgba(255,255,255,.12), transparent 55%), {movie_color(m)}">
+        clean_html(f"""<div class="d-banner" style="background: radial-gradient(circle at 80% 20%, rgba(255,255,255,.12), transparent 55%), {movie_color(m)}">
   {f'<div class="d-blur" style="background-image:{css_url(m["poster"])}"></div><img class="d-poster" src="{esc(m["poster"])}" alt="Poster for {esc(title)}">'
    if m.get("poster") else f'<div class="hero-art" aria-hidden="true">{esc(title)}</div>'}
   <div class="kicker"><span class="cm">CM</span><span>{kicker}</span></div>
   <h2 class="d-title">{esc(title)}</h2>{original_title_html(m)}
-</div>""",
+</div>"""),
         unsafe_allow_html=True,
     )
 
@@ -1241,12 +1275,12 @@ if st.session_state.stage == "results":
                             unsafe_allow_html=True)
       with hero_text:
         st.markdown(
-            f"""{"" if hero.get("poster") else f'<div class="hero-art" aria-hidden="true">{esc(hero["title"])}</div>'}
+            clean_html(f"""{"" if hero.get("poster") else f'<div class="hero-art" aria-hidden="true">{esc(hero["title"])}</div>'}
 <div class="kicker"><span class="cm">CM</span><span>{esc(("BECAUSE YOU LIKED " + p["favourite"]).upper() if p.get("favourite") else "PICK #1 FOR TONIGHT")}</span></div>
 <h1 class="hero-title">{esc(hero['title'])}</h1>{original_title_html(hero)}
 {meta_row(hero, f"Top match for {p['mood']}")}
 <p class="hero-tagline">“{esc(hero.get('tagline'))}”</p>
-<p class="hero-why">{esc(hero.get('mood_match'))}</p>""",
+<p class="hero-why">{esc(hero.get('mood_match'))}</p>"""),
             unsafe_allow_html=True,
         )
         with st.container(horizontal=True, vertical_alignment="center", gap="small"):
@@ -1302,7 +1336,7 @@ if st.session_state.stage == "results":
             seasons = f"{m['seasons']} seasons" if m.get("seasons") else ("Series" if m.get("is_series") else None)
             meta = " · ".join(esc(x) for x in (m.get("year"), seasons or m.get("runtime"), first_genre(m)) if x)
             st.markdown(
-                f"""<div class="top-item">
+                clean_html(f"""<div class="top-item">
   <span class="top-rank" aria-hidden="true">{i + 1}</span>
   <div>
     <div class="poster" role="img" aria-label="{esc(m['title'])}" style="background:{poster_bg(m)}">
@@ -1312,7 +1346,7 @@ if st.session_state.stage == "results":
     {f'<div class="top-name">{esc(m["title"])}</div>' if m.get("poster") else ""}
     <div class="top-tagline" style="width:200px">“{esc(m.get('tagline'))}”</div>
   </div>
-</div>""",
+</div>"""),
                 unsafe_allow_html=True,
             )
             st.button("More info", key=f"info_{i}", type="tertiary", icon=":material/info:",
