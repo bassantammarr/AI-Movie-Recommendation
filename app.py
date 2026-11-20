@@ -260,6 +260,95 @@ div[role="dialog"] {{ background:#181818; }}
 .like-card .body {{ padding:12px 14px; font-size:14px; line-height:1.5; color:#d6d6d6; }}
 .like-card .body b {{ display:block; font-size:13px; color:#b3b3b3; font-weight:500; margin-bottom:4px; }}
 footer.cm-footer {{ padding:48px 0 8px; font-size:13px; color:#8c8c8c; }}
+
+/* ---------- motion ---------- */
+@keyframes fadeUp {{ from {{ opacity:0; transform:translateY(18px); }} to {{ opacity:1; transform:none; }} }}
+@keyframes fadeIn {{ from {{ opacity:0; }} to {{ opacity:1; }} }}
+@keyframes popIn {{ 0% {{ opacity:0; transform:scale(.85); }} 70% {{ transform:scale(1.04); }} 100% {{ opacity:1; transform:none; }} }}
+@keyframes drift {{ from {{ transform:scale(1.08) translate(0,0); }} to {{ transform:scale(1.18) translate(-2%,-1.5%); }} }}
+@keyframes floaty {{ 0%,100% {{ transform:translateY(0) rotate(-1deg); }} 50% {{ transform:translateY(-10px) rotate(1deg); }} }}
+@keyframes glow {{ 0%,100% {{ box-shadow:0 0 0 0 rgba(255,255,255,.0), 0 10px 30px rgba(0,0,0,.4); }}
+                   50% {{ box-shadow:0 0 28px 4px rgba(255,255,255,.22), 0 10px 30px rgba(0,0,0,.4); }} }}
+@keyframes shimmer {{ from {{ background-position:-400px 0; }} to {{ background-position:400px 0; }} }}
+@keyframes logoIn {{ from {{ letter-spacing:12px; opacity:0; }} to {{ letter-spacing:1px; opacity:1; }} }}
+@keyframes barGrow {{ from {{ width:0; }} }}
+
+.logo {{ animation: logoIn .9s cubic-bezier(.2,.8,.2,1) both; }}
+.st-key-hero .kicker {{ animation: fadeUp .6s .05s both; }}
+.st-key-hero .hero-title {{ animation: fadeUp .7s .15s both; }}
+.st-key-hero .hero-original, .st-key-hero .meta-row {{ animation: fadeUp .7s .28s both; }}
+.st-key-hero .hero-tagline {{ animation: fadeUp .7s .38s both; }}
+.st-key-hero .hero-why {{ animation: fadeUp .7s .46s both; }}
+.st-key-hero::before {{ animation: drift 22s ease-in-out infinite alternate; }}
+.hero-poster {{ animation: fadeIn .9s .2s both, floaty 7s 1.1s ease-in-out infinite; transition: transform .3s ease; }}
+.hero-poster:hover {{ animation-play-state: paused; transform: perspective(700px) rotateY(-8deg) scale(1.04); }}
+.st-key-vibe_bar {{ animation: fadeUp .6s .5s both; }}
+
+.top-item {{ animation: fadeUp .6s both; }}
+[data-testid="stColumn"]:nth-child(2) .top-item {{ animation-delay:.1s; }}
+[data-testid="stColumn"]:nth-child(3) .top-item {{ animation-delay:.2s; }}
+.top-rank {{ transition: -webkit-text-stroke-color .3s ease, transform .3s ease; }}
+.top-item:hover .top-rank {{ -webkit-text-stroke-color:{ACCENT}; transform:translateX(-6px); }}
+.top-item:hover .poster {{ transform:translateY(-8px) scale(1.03); box-shadow:0 22px 50px rgba(226,18,33,.28), 0 10px 30px rgba(0,0,0,.5); }}
+.poster {{ transition: transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s ease; }}
+
+[class*="st-key-more_"] {{ animation: fadeUp .5s both; }}
+.stApp [class*="st-key-more_"] button {{ transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s ease; }}
+.stApp [class*="st-key-more_"] button:hover {{ transform:translateY(-4px) scale(1.05); box-shadow:0 16px 36px rgba(0,0,0,.6); z-index:2; }}
+
+[class*="st-key-mood_"] {{ animation: popIn .5s both; }}
+.stApp button[data-testid="stBaseButton-pills"], .stApp button[data-testid="stBaseButton-pillsActive"] {{ transition: all .18s ease; }}
+.stApp button[data-testid="stBaseButton-pills"]:hover {{ border-color:#fff; transform:translateY(-2px); }}
+.stApp button[data-testid="stBaseButton-primary"] {{ transition: transform .15s ease, background .15s ease, box-shadow .15s ease; }}
+.stApp button[data-testid="stBaseButton-primary"]:hover {{ transform:translateY(-2px); box-shadow:0 10px 26px rgba(226,18,33,.4); }}
+.like-card {{ transition: transform .25s ease; }}
+.like-card:hover {{ transform: translateY(-4px); }}
+div[role="dialog"] .d-banner {{ animation: fadeIn .4s both; }}
+div[role="dialog"] .d-poster {{ animation: popIn .6s .15s both; }}
+div[role="dialog"] .reason {{ animation: fadeUp .5s both; }}
+div[role="dialog"] .reason:nth-of-type(2) {{ animation-delay:.08s; }}
+div[role="dialog"] .reason:nth-of-type(3) {{ animation-delay:.16s; }}
+[data-testid="stChatMessage"] {{ animation: fadeUp .35s both; }}
+
+/* ---------- loading screen ---------- */
+.loader {{ max-width:880px; margin:8vh auto 0; text-align:center; }}
+.loader .logo-big {{ font-family:'Bebas Neue', Impact, sans-serif; font-size:64px; color:{ACCENT}; letter-spacing:2px; line-height:1;
+  animation: fadeIn .6s both, pulse 1.6s ease-in-out infinite; }}
+@keyframes pulse {{ 0%,100% {{ opacity:1; text-shadow:0 0 0 rgba(226,18,33,0); }} 50% {{ opacity:.75; text-shadow:0 0 30px rgba(226,18,33,.6); }} }}
+.loader .step {{ margin:18px 0 6px; font-size:20px; font-weight:600; color:#fff; animation: fadeUp .4s both; }}
+.loader .sub {{ font-size:14px; color:#8c8c8c; }}
+.loader .bar {{ height:3px; background:#2a2a2a; border-radius:2px; margin:22px auto 0; max-width:420px; overflow:hidden; }}
+.loader .bar span {{ display:block; height:100%; background:{ACCENT}; border-radius:2px; animation: barGrow .8s ease both; }}
+.loader .strip {{ display:flex; gap:14px; justify-content:center; margin-top:34px; }}
+.loader .ghost {{ width:120px; height:178px; border-radius:6px; animation: fadeUp .5s both;
+  background: linear-gradient(90deg, #1f1f1f 0%, #2c2c2c 40%, #1f1f1f 80%); background-size:800px 100%; }}
+.loader .ghost {{ animation: fadeUp .5s both, shimmer 1.4s linear infinite; }}
+.loader .steps {{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin-top:26px; font-size:13px; }}
+.loader .steps span {{ padding:6px 12px; border-radius:999px; background:#1f1f1f; color:#6b6b6b; }}
+.loader .steps span.done {{ background:#1f2e22; color:#46d369; }}
+.loader .steps span.now {{ background:#fff; color:#141414; font-weight:700; }}
+
+/* ---------- phones ---------- */
+@media (max-width: 700px) {{
+  .block-container {{ padding: .6rem 16px 2rem; }}
+  .st-key-hero {{ margin:0 -16px; width:calc(100% + 32px) !important; padding:60px 16px 120px; min-height:auto; }}
+  .hero-title {{ font-size:58px !important; }}
+  .hero-tagline {{ font-size:18px; }}
+  .top-rank {{ font-size:150px; margin-right:-16px; }}
+  .poster, .top-tagline, .top-name {{ width:160px !important; }}
+  .poster {{ height:232px; }}
+  .stApp [class*="st-key-mood_"] button {{ width:120px; height:120px; }}
+  .stApp [class*="st-key-mood_"] button span[data-testid="stIconMaterial"] {{ font-size:44px; }}
+  .loader .ghost:nth-child(n+4) {{ display:none; }}
+  .hero-poster {{ max-width:150px !important; margin:8px auto 0 !important; }}
+  .d-banner {{ padding-right:24px !important; }}
+  .d-poster {{ display:none; }}
+}}
+
+/* ---------- respect "reduce motion" ---------- */
+@media (prefers-reduced-motion: reduce) {{
+  *, *::before, *::after {{ animation:none !important; transition:none !important; }}
+}}
 </style>
 """,
     unsafe_allow_html=True,
@@ -901,10 +990,52 @@ def original_title_html(m, cls="hero-original"):
 
 def toggle_in(list_key, title):
     items = st.session_state[list_key]
-    if title in items:
-        items.remove(title)
-    else:
+    adding = title not in items
+    if adding:
         items.append(title)
+    else:
+        items.remove(title)
+    if list_key == "my_list":
+        st.toast(f"Added “{title}” to My list" if adding else f"Removed “{title}” from My list",
+                 icon=":material/bookmark_added:" if adding else ":material/bookmark_remove:")
+    else:
+        st.toast(f"Noted! Next picks will lean toward “{title}”" if adding else f"Un-liked “{title}”",
+                 icon=":material/thumb_up:")
+
+
+def trailer_url(m):
+    q = f"{m.get('title', '')} {m.get('year', '')} {'series' if m.get('is_series') else ''} official trailer"
+    return "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(q)
+
+
+def share_text(movies, p):
+    head = f"My CineMatch picks ({p.get('kind', 'Movies')}, {p['mood']} mood)"
+    lines = [head, ""]
+    for i, m in enumerate(movies, 1):
+        bits = [str(m.get("year") or ""), str(m.get("runtime") or "")]
+        lines.append(f"{i}. {m['title']} ({' · '.join(b for b in bits if b)}) {imdb_url(m)}")
+    return "\n".join(lines)
+
+
+LOAD_STEPS = ["Reading your vibe", "Finding real titles", "Asking the AI", "Checking facts", "Fetching posters"]
+
+
+def show_loader(slot, step, headline, sub=""):
+    
+    chips = "".join(
+        f'<span class="{"done" if i < step else "now" if i == step else ""}">'
+        f'{"✓ " if i < step else ""}{name}</span>'
+        for i, name in enumerate(LOAD_STEPS)
+    )
+    ghosts = "".join(f'<div class="ghost" style="animation-delay:{i * .08:.2f}s, {i * .15:.2f}s"></div>' for i in range(5))
+    pct = int((step + 0.5) / len(LOAD_STEPS) * 100)
+    slot.markdown(
+        f'<div class="loader"><div class="logo-big">CineMatch</div>'
+        f'<div class="step">{esc(headline)}</div><div class="sub">{esc(sub)}</div>'
+        f'<div class="bar"><span style="width:{pct}%"></span></div>'
+        f'<div class="strip">{ghosts}</div><div class="steps">{chips}</div></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def init_state():
@@ -978,6 +1109,7 @@ def detail_dialog(client, model):
     with st.container(horizontal=True, vertical_alignment="center", gap="small"):
         with st.container(key="watch_dialog", width="content"):
             st.link_button("Where to watch", watch_url(m), icon=":material/play_arrow:")
+        st.link_button("Trailer", trailer_url(m), icon=":material/smart_display:")
         in_list = title in st.session_state.my_list
         if st.button("", key="round_dlist", icon=":material/check:" if in_list else ":material/add:",
                      help="Remove from My list" if in_list else "Add to My list"):
@@ -1123,8 +1255,10 @@ if st.session_state.stage == "setup":
         f".stApp .st-key-mood_{i} button{{background:{d['color']} !important;}}" for i, d in enumerate(MOODS.values())
     )
     sel_i = list(MOODS).index(sel)
-    tile_css += (f".stApp .st-key-mood_{sel_i} button{{opacity:1;outline:4px solid #ffffff;}}"
+    tile_css += (f".stApp .st-key-mood_{sel_i} button{{opacity:1;outline:4px solid #ffffff;"
+                 f"animation: glow 2.4s ease-in-out infinite;}}"
                  f".st-key-mood_{sel_i} button p{{font-weight:700;}}")
+    tile_css += "".join(f".st-key-mood_{i}{{animation-delay:{i * 0.06:.2f}s;}}" for i in range(len(MOODS)))
     st.markdown(f"<style>{tile_css}</style>", unsafe_allow_html=True)
 
     st.markdown(
@@ -1214,25 +1348,38 @@ if st.session_state.stage == "loading":
                        "(the first search for a language can take ~15s)")
     else:
         spinner_txt = f"Finding {noun} for your {profile['mood'].lower()} mood…"
-    st.markdown('<div style="height:18vh"></div>', unsafe_allow_html=True)
+    
+    st.markdown('<style>.stApp [data-stale="true"]{display:none !important;}</style>', unsafe_allow_html=True)
+    slot = st.empty()
     _, mid, _ = st.columns([1, 2, 1])
-    with mid, st.spinner(spinner_txt):
+    with mid:
         movies, tried = [], list(st.session_state.seen_titles)
         try:
-            for _ in range(2): 
+            show_loader(slot, 0, spinner_txt)
+            for round_no in range(2):  
+                show_loader(slot, 1, spinner_txt,
+                            "Pulling a list of real titles from Wikidata" if profile.get("actor") or lang_name
+                            not in ("Any", "English") else "Narrowing things down")
                 pool = get_pool(profile, tried)
+                show_loader(slot, 2, "Asking the AI for your best matches…",
+                            "Hunting for a few more" if round_no else "Matching mood, genres and wishes")
                 batch = fetch_movies(client, model, profile, tried, pool, st.session_state.liked)
                 tried += [m["title"] for m in batch]
+                show_loader(slot, 3, "Checking years, runtimes and cast…", "Every title is verified on Wikidata")
                 movies += verify_movies(batch, profile)
                 if len(movies) >= TOP_N + 3:
                     break
-            movies = attach_posters(attach_cast(movies, profile.get("actor"))[: profile["count"]])
+            movies = attach_cast(movies, profile.get("actor"))[: profile["count"]]
+            show_loader(slot, 4, "Fetching posters…", "Almost there")
+            movies = attach_posters(movies)
+            slot.empty()
             if not movies:
                 st.warning(
                     f"Couldn't find {'' if lang_name == 'Any' else lang_name + ' '}{noun} matching all your choices. "
                     "Try fewer genres, a wider era, or switch Movies/Series."
                 )
         except Exception as ex:
+            slot.empty()
             movies = []
             st.error(f"Couldn't get recommendations: {ex}")
     if movies:
@@ -1323,6 +1470,9 @@ if st.session_state.stage == "results":
             if st.button("Edit vibe", type="tertiary", icon=":material/tune:"):
                 st.session_state.stage = "setup"
                 st.rerun()
+            with st.popover("Share", icon=":material/ios_share:", type="tertiary"):
+                st.caption("Copy your picks to send to a friend")
+                st.code(share_text(movies, p), language=None, wrap_lines=True)
             if st.button("Start over", type="tertiary", icon=":material/restart_alt:"):
                 reset()
                 st.rerun()
