@@ -31,8 +31,18 @@ MOODS = {
     "Curious": {"color": "#2f7a52", "icon": ":material/explore:", "rule": "mind-expanding: mysteries, big ideas, discovery"},
     "Surprise me": {"color": "#474747", "icon": ":material/shuffle:", "rule": "anything goes: varied, unexpected but acclaimed picks"},
 }
-GENRES = ["Drama", "Comedy", "Thriller", "Romance", "Sci-Fi", "Animation", "Documentary",
-          "Action", "Horror", "Fantasy", "Mystery", "Crime"]
+GENRES = ["Drama", "Comedy", "Rom-Com", "Romance", "Thriller", "Action", "Adventure", "Sci-Fi", "Fantasy",
+          "Mystery", "Crime", "Horror", "Animation", "Anime", "Family", "Documentary", "Biography", "History",
+          "War", "Musical", "Sport", "Superhero", "Teen", "Western"]
+KINDS = ["Movies", "Series", "Both"]
+KIND_NOUN = {"Movies": "movies", "Series": "TV series", "Both": "movies or TV series"}
+COMPANY = {
+    "Just me": "watching alone",
+    "Date night": "a date night: romantic, fun or conversation-starting",
+    "Friends": "a group of friends: crowd-pleasers that are fun to watch together",
+    "Family & kids": "a family with kids: MUST be family-friendly (G/PG), no strong violence, sex or swearing",
+}
+LENGTHS = {"Any length": None, "Under 1h 45m": 105, "Under 2h 15m": 135}
 LANGUAGES = ["Any", "English", "Arabic", "French", "Spanish", "Korean", "Japanese", "Hindi", "Italian", "German"]
 ERAS = ["Any era", "Classics (pre-1980)", "80s & 90s", "2000s", "2010s", "2020s"]
 ERA_RANGES = {
@@ -66,7 +76,8 @@ LANG_COUNTRIES = {
     "Italian": ["Q38"],
     "German": ["Q183", "Q40", "Q39", "Q713750", "Q16957"],
 }
-FILM_TYPES = ["Q11424", "Q202866", "Q29168811"]  
+FILM_TYPES = ["Q11424", "Q202866", "Q29168811"]  # film, animated film, animated feature film
+SERIES_TYPES = ["Q5398426", "Q1259759", "Q581714", "Q526877", "Q63952888"]  # TV/mini/animated/web/anime series  
 EXTRA_CANDIDATES = 3  
 
 POSTER_COLORS = ["#1d3a4a", "#4a3320", "#2b2552", "#24402f", "#1c2d4f", "#3a2440", "#3d2a2a", "#2f3a3f", "#42381c"]
@@ -118,6 +129,14 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ d
   border-radius:999px; border:1px solid #fff; background:#fff; color:#141414; min-height:44px; padding:0 20px; font-weight:600;
 }}
 .st-key-genre_pills div:has(> button[data-testid^="stBaseButton-pills"]) {{ justify-content:center; }}
+.stApp button[data-testid="stBaseButton-segmented_control"] {{
+  background:transparent; color:#d6d6d6; border-color:#5a5a5a; min-height:44px; padding:0 26px; font-weight:600;
+}}
+.stApp button[data-testid="stBaseButton-segmented_controlActive"] {{
+  background:#fff; color:#141414; border-color:#fff; min-height:44px; padding:0 26px; font-weight:700;
+}}
+.st-key-search_row label p {{ font-size:12px; letter-spacing:1px; font-weight:600; color:#b3b3b3; text-transform:uppercase; }}
+.badge.star-badge {{ border-color:#f5c518; color:#f5c518; }}
 
 /* form labels */
 .st-key-filters label p, .st-key-header label p {{ font-size:12px; letter-spacing:1px; font-weight:600; color:#b3b3b3; text-transform:uppercase; }}
@@ -276,7 +295,8 @@ def parse_json(text):
 
 
 def wanted_count(profile):
-    strict = profile["language"] != "Any" or profile["era"] in ERA_RANGES
+    strict = (profile["language"] != "Any" or profile["era"] in ERA_RANGES or profile.get("actor")
+              or profile.get("kind", "Movies") != "Both" or LENGTHS.get(profile.get("length")))
     return profile["count"] + (EXTRA_CANDIDATES if strict else 0)
 
 
@@ -294,10 +314,30 @@ def build_prompt(profile, exclude, pool=None, liked=None):
     if profile["era"] in ERA_RANGES:
         lo, hi = ERA_RANGES[profile["era"]]
         hard_rules.append(f"- ERA IS MANDATORY: every movie must be first released between {lo} and {min(hi, 2026)}.")
+    kind = profile.get("kind", "Movies")
+    if kind == "Movies":
+        hard_rules.append("- TYPE IS MANDATORY: recommend feature films only, no TV series.")
+    elif kind == "Series":
+        hard_rules.append("- TYPE IS MANDATORY: recommend TV series or miniseries only, no films.")
+    else:
+        hard_rules.append("- Mix feature films and TV series.")
+    fav = profile.get("favourite")
+    if fav:
+        hard_rules.append(
+            f"- SIMILAR TO '{fav}': the user loves '{fav}'. Recommend titles with a similar feel, themes, style "
+            f"or tone, while still respecting the other wishes. Never recommend '{fav}' itself, and say in "
+            f"why_you what each pick shares with it."
+        )
+    actor = profile.get("actor")
+    if actor:
+        hard_rules.append(f"- STARRING {actor}: every pick must have {actor} in its main cast.")
+    limit = LENGTHS.get(profile.get("length"))
+    if limit and kind != "Series":
+        hard_rules.append(f"- Films must be shorter than {limit} minutes.")
     if pool:
         hard_rules.append(
-            "- PICK ONLY FROM THE CANDIDATE LIST below (real films from Wikidata). Copy the title and year "
-            "exactly as written. Never invent a film or pick one that is not on the list."
+            "- PICK ONLY FROM THE CANDIDATE LIST below (real titles from Wikidata). Copy the title and year "
+            "exactly as written. Never invent a title or pick one that is not on the list."
         )
     hard_rules_txt = "\n".join(hard_rules)
     pool_txt = ""
@@ -310,31 +350,39 @@ def build_prompt(profile, exclude, pool=None, liked=None):
         else "well-known, mainstream (IMDb ~7+)"
     )
     liked_txt = f"- The user liked these earlier picks, so lean toward films in a similar spirit: {', '.join(liked)}\n" if liked else ""
-    return f"""You are an explainable AI movie recommendation system.
+    noun = KIND_NOUN[kind]
+    return f"""You are an explainable AI movie and TV recommendation system.
 
 User profile:
+- Looking for: {noun}
 - Age: {profile['age']}
 - Mood: {profile['mood']} ({MOODS[profile['mood']]['rule']})
-- Preferred genres: {genres}
+- Preferred genres: {genres}  (Rom-Com = romantic comedy)
 - Language: {profile['language']}
 - Era: {profile['era']}
+- Watching with: {COMPANY.get(profile.get('company', 'Just me'), 'watching alone')}
+- Favourite to match: {fav or 'none'}
+- Favourite actor: {actor or 'none'}
 - Extra wishes: {profile['notes'] or 'none'}
 
 Rules:
-- Recommend ONLY real movies that are {popularity}.
+- Recommend ONLY real {noun} that are {popularity}.
 {hard_rules_txt}
 - Match the mood and the genres. Order the list from best match to weakest match.
 - Content must be age-appropriate for the user's age.
 - Do NOT recommend any of these already-suggested titles: {exclude_txt}
 {liked_txt}- Write all text fields in English.
 {pool_txt}
-Return ONLY valid JSON, no extra text, with exactly {wanted_count(profile)} movies:
+Return ONLY valid JSON, no extra text, with exactly {wanted_count(profile)} titles:
 {{"movies": [{{
-  "title": "the film's common English title",
+  "title": "the common English title",
   "original_title": "title in its original language/script",
+  "type": "movie or series",
   "year": 2010,
   "genres": ["Genre", "Genre"],
-  "runtime": "2h 28m",
+  "runtime": "film: total length like 2h 28m; series: episode length like 45m",
+  "seasons": "number of seasons for a series, otherwise null",
+  "cast": ["2 or 3 lead actors"],
   "rating": 8.8,
   "tagline": "a short, catchy one-line hook (no spoilers)",
   "mood_match": "one or two sentences on why it fits the mood",
@@ -379,25 +427,36 @@ def wikidata_lookup(title_variants):
         for t in variants
         for lang in ("en", "mul")
     )
-    query = f"""SELECT ?i ?item ?date ?dur ?imdb ?links ?langLabel ?wiki WHERE {{
+    series = " ".join("wd:" + q for q in SERIES_TYPES)
+    query = f"""SELECT ?i ?item ?date ?dur ?imdb ?links ?langLabel ?wiki ?isSeries ?seasons WHERE {{
   VALUES (?i ?label) {{ {values} }}
   {{ ?item rdfs:label ?label }} UNION {{ ?item skos:altLabel ?label }}
-  ?item wdt:P57 [] ; wdt:P577 ?date ; wikibase:sitelinks ?links .
+  {{ ?item wdt:P57 [] }} UNION {{ VALUES ?stype {{ {series} }} ?item wdt:P31 ?stype }}
+  ?item wdt:P577|wdt:P580 ?date ; wikibase:sitelinks ?links .
+  OPTIONAL {{ VALUES ?stype2 {{ {series} }} ?item wdt:P31 ?stype2 . BIND(true AS ?isSeries) }}
+  OPTIONAL {{ ?item wdt:P2437 ?seasons }}
   OPTIONAL {{ ?item wdt:P2047 ?dur }}
   OPTIONAL {{ ?item wdt:P345 ?imdb }}
   OPTIONAL {{ ?item wdt:P364 ?lang . ?lang rdfs:label ?langLabel FILTER(lang(?langLabel) = "en") }}
   OPTIONAL {{ ?article schema:about ?item ; schema:isPartOf <https://en.wikipedia.org/> ; schema:name ?wiki }}
 }}"""
-    r = requests.post(WIKIDATA_SPARQL, data={"query": query}, headers=HTTP_HEADERS, timeout=15)
+    r = requests.post(WIKIDATA_SPARQL, data={"query": query}, headers=HTTP_HEADERS, timeout=25)
     r.raise_for_status()
     found = {}
     for b in r.json()["results"]["bindings"]:
         i, qid = int(b["i"]["value"]), b["item"]["value"].rsplit("/", 1)[-1]
         c = found.setdefault(i, {}).setdefault(
             qid,
-            {"years": set(), "durations": set(), "languages": set(), "imdb": None, "wiki": None,
-             "links": int(b["links"]["value"])},
+            {"qid": qid, "years": set(), "durations": set(), "languages": set(), "imdb": None, "wiki": None,
+             "series": False, "seasons": None, "links": int(b["links"]["value"])},
         )
+        if "isSeries" in b:
+            c["series"] = True
+        if "seasons" in b:
+            try:
+                c["seasons"] = max(c["seasons"] or 0, int(float(b["seasons"]["value"])))
+            except ValueError:
+                pass
         if "wiki" in b:
             c["wiki"] = b["wiki"]["value"]
         if "langLabel" in b:
@@ -419,11 +478,34 @@ def sparql(query, timeout=45):
     return r.json()["results"]["bindings"]
 
 
+def kind_types(kind):
+    return {"Movies": FILM_TYPES, "Series": SERIES_TYPES}.get(kind, FILM_TYPES + SERIES_TYPES)
+
+
+def name_variants(name):
+    name = " ".join(str(name).split())
+    return tuple(dict.fromkeys([name, " ".join(w[:1].upper() + w[1:] for w in name.split(" "))]))
+
+
 @st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
-def candidate_pool(language, era_name, limit=400):
-    """The best-known real films in a language (and era), so the AI picks from facts, not memory."""
+def actor_pool(actor, kind, era_name, limit=200):
+    """The actor's best-known real films/series from Wikidata, so 'Starring X' picks are real."""
+    names = " ".join(f"{json.dumps(n)}@{l}" for n in name_variants(actor) for l in ("en", "mul"))
+    types = " ".join("wd:" + q for q in kind_types(kind))
+    rows = sparql(f"""SELECT DISTINCT ?item ?links WHERE {{
+  VALUES ?name {{ {names} }} VALUES ?type {{ {types} }}
+  ?person rdfs:label ?name ; wdt:P31 wd:Q5 .
+  ?item wdt:P161 ?person ; wdt:P31 ?type ; wikibase:sitelinks ?links .
+}} ORDER BY DESC(?links) LIMIT {limit}""", timeout=30)
+    links = {b["item"]["value"].rsplit("/", 1)[-1]: int(b["links"]["value"]) for b in rows}
+    return pool_details(links, era_name)
+
+
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def candidate_pool(language, era_name, kind="Movies", limit=400):
+    """The best-known real titles in a language (and era), so the AI picks from facts, not memory."""
     langs = " ".join("wd:" + q for q in LANG_QIDS[language])
-    types = " ".join("wd:" + q for q in FILM_TYPES)
+    types = " ".join("wd:" + q for q in kind_types(kind))
     countries = " ".join("wd:" + q for q in LANG_COUNTRIES.get(language, []))
     country_rule = f"VALUES ?country {{ {countries} }} ?item wdt:P495 ?country ." if countries else ""
     rows = sparql(f"""SELECT DISTINCT ?item ?links WHERE {{
@@ -432,12 +514,17 @@ def candidate_pool(language, era_name, limit=400):
   {country_rule}
 }} ORDER BY DESC(?links) LIMIT {limit}""")
     links = {b["item"]["value"].rsplit("/", 1)[-1]: int(b["links"]["value"]) for b in rows}
+    return pool_details(links, era_name)
+
+
+def pool_details(links, era_name):
+    """Title, first year and genres for a set of Wikidata items, filtered to the era."""
     if not links:
         return []
     ids = " ".join("wd:" + q for q in links)
     rows = sparql(f"""SELECT ?item ?d ?title ?gl WHERE {{
   VALUES ?item {{ {ids} }}
-  ?item wdt:P577 ?d .
+  ?item wdt:P577|wdt:P580 ?d .
   OPTIONAL {{ ?item rdfs:label ?title FILTER(lang(?title) = "en") }}
   OPTIONAL {{ ?item wdt:P136 ?g . ?g rdfs:label ?gl FILTER(lang(?gl) = "en") }}
 }}""", timeout=45)
@@ -461,14 +548,19 @@ def candidate_pool(language, era_name, limit=400):
 
 
 def get_pool(profile, exclude):
-    """Candidate list for non-English languages; None means 'let the AI choose freely'."""
-    if profile["language"] in ("Any", "English") or profile["language"] not in LANG_QIDS:
-        return None
+    """Real candidates from Wikidata for an actor's work or a non-English language;
+    None means 'let the AI choose freely'."""
+    kind = profile.get("kind", "Movies")
     try:
-        pool = candidate_pool(profile["language"], profile["era"])
+        if profile.get("actor"):
+            pool = actor_pool(profile["actor"], kind, profile["era"])
+        elif profile["language"] not in ("Any", "English") and profile["language"] in LANG_QIDS:
+            pool = candidate_pool(profile["language"], profile["era"], kind)
+        else:
+            return None
     except Exception:
         return None  
-    seen = {t.lower() for t in exclude}
+    seen = {t.lower() for t in exclude} | {str(profile.get("favourite") or "").lower()}
     return [f for f in pool if f["title"].lower() not in seen][:200] or None
 
 
@@ -550,6 +642,12 @@ def verify_movies(movies, profile):
             movie["runtime"] = fmt_runtime(mins)
         elif parse_minutes(movie.get("runtime")):
             movie["runtime"] = fmt_runtime(parse_minutes(movie.get("runtime")))
+        if best["series"] and best["durations"]:
+            movie["runtime"] = f"{fmt_runtime(min(best['durations']))} episodes"
+        movie["qid"] = best["qid"]
+        movie["is_series"] = best["series"]
+        if best["seasons"]:
+            movie["seasons"] = best["seasons"]
         movie["imdb_id"] = best["imdb"]
         movie["wiki"] = best.get("wiki")
         movie["languages"] = sorted(best["languages"])
@@ -557,6 +655,9 @@ def verify_movies(movies, profile):
         movie["verified"] = True
 
     era = ERA_RANGES.get(profile["era"])
+    kind = profile.get("kind", "Movies")
+    limit = LENGTHS.get(profile.get("length"))
+    fav = str(profile.get("favourite") or "").strip().lower()
 
     def rank(m):
         """2 = confirmed match, 1 = can't confirm, 0 = confirmed mismatch (dropped)."""
@@ -565,6 +666,15 @@ def verify_movies(movies, profile):
         except ValueError:
             year = None
         if era and year and not era[0] <= year <= era[1]:
+            return 0
+        is_series = m["is_series"] if m.get("verified") else str(m.get("type", "")).lower().startswith("series")
+        m["is_series"] = is_series
+        if (kind == "Movies" and is_series) or (kind == "Series" and not is_series):
+            return 0
+        mins = parse_minutes(m.get("runtime"))
+        if limit and not is_series and mins and mins > limit:
+            return 0
+        if fav and str(m.get("title", "")).strip().lower() == fav:
             return 0
         if lang != "Any":
             if m.get("lang_ok") is False or not m.get("verified"):
@@ -575,6 +685,52 @@ def verify_movies(movies, profile):
 
     ranked = sorted(((rank(m), i, m) for i, m in enumerate(movies)), key=lambda x: (-x[0], x[1]))
     return [m for r, _, m in ranked if r > 0][: profile["count"]]
+
+
+@st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
+def wikidata_cast(qids):
+    
+    if not qids:
+        return {}
+    ids = " ".join("wd:" + q for q in qids)
+    rows = sparql(f"""SELECT ?item ?name WHERE {{
+  VALUES ?item {{ {ids} }}
+  ?item wdt:P161 ?a . ?a rdfs:label ?name FILTER(lang(?name) IN ("en", "mul"))
+}}""", timeout=25)
+    out = {}
+    for b in rows:
+        out.setdefault(b["item"]["value"].rsplit("/", 1)[-1], set()).add(b["name"]["value"])
+    return out
+
+
+def norm_name(n):
+    import unicodedata
+    n = unicodedata.normalize("NFKD", str(n)).encode("ascii", "ignore").decode()
+    return " ".join(re.sub(r"[^a-z0-9 ]", " ", n.lower()).split())
+
+
+def attach_cast(movies, actor=None):
+    
+    qids = tuple(dict.fromkeys(m["qid"] for m in movies if m.get("qid")))
+    try:
+        cast = wikidata_cast(qids)
+    except Exception:
+        cast = {}
+    want = norm_name(actor) if actor else None
+    for m in movies:
+        names = cast.get(m.get("qid"), set())
+        by_norm = {norm_name(n): n for n in names}
+        ai_cast = m.get("cast") if isinstance(m.get("cast"), list) else []
+        m["cast"] = [by_norm[norm_name(n)] for n in ai_cast if norm_name(n) in by_norm][:4]
+        if want:
+            m["with_actor"] = want in by_norm
+            if m["with_actor"] and by_norm[want] not in m["cast"]:
+                m["cast"] = [by_norm[want]] + m["cast"][:3]
+    if want and sum(1 for m in movies if m.get("with_actor")) >= TOP_N:
+        movies = [m for m in movies if m.get("with_actor")]
+    elif want:
+        movies = sorted(movies, key=lambda m: not m.get("with_actor"))
+    return movies
 
 
 @st.cache_data(ttl=7 * 24 * 3600, show_spinner=False)
@@ -620,13 +776,14 @@ def attach_posters(movies):
 
 def stream_answer(client, model, question, history, focus=None):
     movies_ctx = json.dumps(
-        [{k: m.get(k) for k in ("title", "year", "runtime", "genres", "languages", "tagline", "mood_match")}
+        [{k: m.get(k) for k in ("title", "is_series", "year", "runtime", "seasons", "genres", "cast", "languages",
+                                "tagline", "mood_match")}
          for m in st.session_state.movies],
         ensure_ascii=False,
     )
     p = st.session_state.profile
     system = (
-        "You are CineMatch, a friendly, knowledgeable movie buddy continuing a conversation about recommendations "
+        "You are CineMatch, a friendly, knowledgeable movie and TV buddy continuing a conversation about recommendations "
         f"you already gave. User profile: age {p['age']}, mood {p['mood']}, genres {', '.join(p['genres']) or 'any'}. "
         f"The recommended movies, best match first, are: {movies_ctx}. "
         + (f"The user is asking specifically about '{focus}'. " if focus else "Focus on these movies unless the user asks for others. ")
@@ -682,13 +839,18 @@ def meta_row(m, match_label=None):
     parts = []
     if match_label:
         parts.append(f'<span class="match">{esc(match_label)}</span>')
-    parts += [f"<span>{esc(x)}</span>" for x in (m.get("year"), m.get("runtime")) if x]
+    if m.get("is_series"):
+        parts.append('<span class="badge">Series</span>')
+    seasons = f"{m['seasons']} season{'s' if str(m['seasons']) != '1' else ''}" if m.get("seasons") else None
+    parts += [f"<span>{esc(x)}</span>" for x in (m.get("year"), seasons, m.get("runtime")) if x]
     if m.get("rating"):
         parts.append(f'<span title="AI estimate"><span class="star">★</span> ~{esc(m["rating"])}</span>')
     if m.get("verified"):
         parts.append('<span class="badge" title="Year &amp; runtime checked against Wikidata">✓ Verified</span>')
     else:
         parts.append('<span class="badge warn" title="Could not verify on Wikidata">≈ Unverified</span>')
+    if m.get("with_actor"):
+        parts.append(f'<span class="badge star-badge">★ {esc(st.session_state.profile.get("actor"))}</span>')
     lang = (m.get("languages") or [None])[0] or (
         st.session_state.profile.get("language") if st.session_state.profile.get("language") != "Any" else None)
     if lang:
@@ -739,6 +901,21 @@ def set_mood(name):
     st.session_state.mood_sel = name
 
 
+def find_more_like(title):
+   
+    st.session_state.profile["favourite"] = title
+    st.session_state.show_detail = False
+    st.session_state.stage = "loading"
+
+
+def vibe_title(p, n):
+    if p.get("favourite"):
+        return f"Top {n} like {p['favourite']}"
+    if p.get("actor"):
+        return f"Top {n} starring {p['actor']}"
+    return f"Top {n} for your {p['mood'].lower()} mood"
+
+
 def open_detail(idx):
     st.session_state.detail_idx = idx
     st.session_state.show_detail = True
@@ -777,6 +954,10 @@ def detail_dialog(client, model):
                      help="Undo good pick" if liked else "Good pick: more like this next time"):
             toggle_in("liked", title)
             st.rerun(scope="fragment")
+        if st.button("More like this", key="like_this", icon=":material/travel_explore:",
+                     help=f"New picks similar to {title}"):
+            find_more_like(title)
+            st.rerun()
         if idx < TOP_N and len(movies) > TOP_N:
             if st.button("Swap this pick", key="swap_pick", help="Replace it with the next best match"):
                 movies[idx] = movies.pop(TOP_N)
@@ -802,11 +983,16 @@ def detail_dialog(client, model):
         )
     with right:
         facts = [
+            ("Type", "TV series" if m.get("is_series") else "Film"),
             ("Genre", ", ".join(m.get("genres") or []) or "—"),
+            ("Starring", ", ".join(m.get("cast") or []) or "—"),
             ("Language", ", ".join(m.get("languages") or []) or lang_label(p["language"])),
             ("Released", m.get("year") or "—"),
-            ("Runtime", m.get("runtime") or "—"),
-            ("Picked for", " · ".join([p["mood"], f"Age {p['age']}"] + (p["genres"][:2] or []))),
+            ("Seasons" if m.get("is_series") else "Runtime",
+             (m.get("seasons") or "—") if m.get("is_series") else (m.get("runtime") or "—")),
+            ("Picked for", " · ".join([p["mood"], f"Age {p['age']}"] + (p["genres"][:2] or [])
+                                      + ([f"like {p['favourite']}"] if p.get("favourite") else [])
+                                      + ([f"with {p['actor']}"] if p.get("actor") else []))),
         ]
         st.markdown(
             '<div class="facts">'
@@ -908,10 +1094,14 @@ if st.session_state.stage == "setup":
     st.markdown(f"<style>{tile_css}</style>", unsafe_allow_html=True)
 
     st.markdown(
-        '<h1 style="text-align:center;margin:40px 0 36px;font-size:54px;font-weight:500;letter-spacing:-.5px;color:#fff">'
+        '<h1 style="text-align:center;margin:32px 0 18px;font-size:54px;font-weight:500;letter-spacing:-.5px;color:#fff">'
         "What's your vibe tonight?</h1>",
         unsafe_allow_html=True,
     )
+    with st.container(key="kind_seg", horizontal=True, horizontal_alignment="center"):
+        kind = st.segmented_control("Looking for", KINDS, default=prof.get("kind", "Movies"),
+                                    label_visibility="collapsed", width="content") or "Movies"
+    st.write("")
     _, mid, _ = st.columns([1, 8, 1])
     with mid:
         cols = st.columns(len(MOODS))
@@ -927,16 +1117,32 @@ if st.session_state.stage == "setup":
                               label_visibility="collapsed")
 
     st.write("")
+    with st.container(key="search_row"):
+        _, s1, s2, _ = st.columns([1, 2.5, 2.5, 1])
+        favourite = s1.text_input(
+            "Similar to a favourite (optional)", value=prof.get("favourite", ""),
+            placeholder="e.g. Inception, Breaking Bad, Parasite",
+            help="We'll find titles with a similar feel, themes or style.")
+        actor = s2.text_input(
+            "Starring (optional)", value=prof.get("actor", ""),
+            placeholder="e.g. Tom Hanks, Song Kang-ho, Adel Emam",
+            help="Picks come from this actor's real filmography on Wikidata.")
+
     with st.container(key="filters"):
-        _, c1, c2, c3, c4, _ = st.columns([1.2, 0.8, 1.4, 1.4, 1.4, 1.2], vertical_alignment="bottom")
+        _, c1, c2, c3, c4, c5, _ = st.columns([1, 0.8, 1.3, 1.3, 1.3, 1.3, 1], vertical_alignment="bottom")
         age = c1.number_input("Age", min_value=5, max_value=100, value=int(prof.get("age", 22)), step=1)
         language = c2.selectbox("Language", LANGUAGES, index=LANGUAGES.index(prof.get("language", "Any")),
                                 format_func=lang_label)
         era = c3.selectbox("Era", ERAS, index=ERAS.index(prof.get("era", "Any era")))
-        go = c4.button("Find my movies", type="primary", icon=":material/chevron_right:", use_container_width=True)
-        _, n1, _ = st.columns([1.2, 5, 1.2])
+        company = c4.selectbox("Watching with", list(COMPANY),
+                               index=list(COMPANY).index(prof.get("company", "Just me")))
+        length = c5.selectbox("Length", list(LENGTHS), index=list(LENGTHS).index(prof.get("length", "Any length")),
+                              disabled=kind == "Series", help="Applies to films only")
+        _, n1, n2, _ = st.columns([1, 4.2, 1.6, 1], vertical_alignment="bottom")
         notes = n1.text_input("Anything else? (optional)", value=prof.get("notes", ""),
-                              placeholder="e.g. something like Interstellar, no gore, has a twist ending…")
+                              placeholder="e.g. no gore, has a twist ending, set in Paris…")
+        go_label = {"Movies": "Find my movies", "Series": "Find my series", "Both": "Find my picks"}[kind]
+        go = n2.button(go_label, type="primary", icon=":material/chevron_right:", use_container_width=True)
 
     if go:
         if not client:
@@ -948,6 +1154,11 @@ if st.session_state.stage == "setup":
                 "age": int(age),
                 "language": language,
                 "era": era,
+                "kind": kind,
+                "favourite": favourite.strip(),
+                "actor": actor.strip(),
+                "company": company,
+                "length": length,
                 "notes": notes.strip(),
                 "count": TOP_N + MORE_N,
             }
@@ -959,10 +1170,16 @@ if st.session_state.stage == "setup":
 if st.session_state.stage == "loading":
     profile = st.session_state.profile
     lang_name = profile.get("language", "Any")
-    spinner_txt = (
-        f"Finding real {lang_name} films for your {profile['mood'].lower()} mood… (the first search for a language can take ~15s)"
-        if lang_name not in ("Any", "English") else f"Finding films for your {profile['mood'].lower()} mood…"
-    )
+    noun = KIND_NOUN[profile.get("kind", "Movies")]
+    if profile.get("actor"):
+        spinner_txt = f"Looking through {profile['actor']}'s real {noun} on Wikidata…"
+    elif profile.get("favourite"):
+        spinner_txt = f"Finding {noun} like {profile['favourite']}…"
+    elif lang_name not in ("Any", "English"):
+        spinner_txt = (f"Finding real {lang_name} {noun} for your {profile['mood'].lower()} mood… "
+                       "(the first search for a language can take ~15s)")
+    else:
+        spinner_txt = f"Finding {noun} for your {profile['mood'].lower()} mood…"
     st.markdown('<div style="height:18vh"></div>', unsafe_allow_html=True)
     _, mid, _ = st.columns([1, 2, 1])
     with mid, st.spinner(spinner_txt):
@@ -975,11 +1192,11 @@ if st.session_state.stage == "loading":
                 movies += verify_movies(batch, profile)
                 if len(movies) >= TOP_N + 3:
                     break
-            movies = attach_posters(movies[: profile["count"]])
+            movies = attach_posters(attach_cast(movies, profile.get("actor"))[: profile["count"]])
             if not movies:
                 st.warning(
-                    f"Couldn't find {'' if lang_name == 'Any' else lang_name + ' '}films matching all your choices. "
-                    "Try fewer genres or a wider era."
+                    f"Couldn't find {'' if lang_name == 'Any' else lang_name + ' '}{noun} matching all your choices. "
+                    "Try fewer genres, a wider era, or switch Movies/Series."
                 )
         except Exception as ex:
             movies = []
@@ -1025,7 +1242,7 @@ if st.session_state.stage == "results":
       with hero_text:
         st.markdown(
             f"""{"" if hero.get("poster") else f'<div class="hero-art" aria-hidden="true">{esc(hero["title"])}</div>'}
-<div class="kicker"><span class="cm">CM</span><span>PICK #1 FOR TONIGHT</span></div>
+<div class="kicker"><span class="cm">CM</span><span>{esc(("BECAUSE YOU LIKED " + p["favourite"]).upper() if p.get("favourite") else "PICK #1 FOR TONIGHT")}</span></div>
 <h1 class="hero-title">{esc(hero['title'])}</h1>{original_title_html(hero)}
 {meta_row(hero, f"Top match for {p['mood']}")}
 <p class="hero-tagline">“{esc(hero.get('tagline'))}”</p>
@@ -1040,6 +1257,8 @@ if st.session_state.stage == "results":
             st.button("", key="round_hlist", icon=":material/check:" if in_list else ":material/add:",
                       help="Remove from My list" if in_list else "Add to My list",
                       on_click=toggle_in, args=("my_list", hero["title"]))
+            st.button("More like this", key="like_hero", type="tertiary", icon=":material/travel_explore:",
+                      on_click=find_more_like, args=(hero["title"],))
             liked = hero["title"] in st.session_state.liked
             st.button("", key="round_hlike", icon=":material/thumb_up:" if not liked else ":material/thumb_up_off_alt:",
                       help="Undo good pick" if liked else "Good pick: more like this next time",
@@ -1048,7 +1267,17 @@ if st.session_state.stage == "results":
     
     with st.container(key="vibe_bar"), st.container(horizontal=True, vertical_alignment="center",
                                                     horizontal_alignment="distribute"):
-        chips = [f'<span class="chip on">{esc(p["mood"])}</span>', f'<span class="chip">Age {p["age"]}</span>']
+        chips = [f'<span class="chip on">{esc(p.get("kind", "Movies"))}</span>',
+                 f'<span class="chip on">{esc(p["mood"])}</span>']
+        if p.get("favourite"):
+            chips.append(f'<span class="chip on">Like {esc(p["favourite"])}</span>')
+        if p.get("actor"):
+            chips.append(f'<span class="chip on">★ {esc(p["actor"])}</span>')
+        chips.append(f'<span class="chip">Age {p["age"]}</span>')
+        if p.get("company", "Just me") != "Just me":
+            chips.append(f'<span class="chip">{esc(p["company"])}</span>')
+        if LENGTHS.get(p.get("length")) and p.get("kind") != "Series":
+            chips.append(f'<span class="chip">{esc(p["length"])}</span>')
         chips += [f'<span class="chip">{esc(g)}</span>' for g in p["genres"]] or ['<span class="chip">Any genre</span>']
         chips += [f'<span class="chip">{esc(lang_label(p["language"]))}</span>', f'<span class="chip">{esc(p["era"])}</span>']
         st.markdown(f'<div class="vibe-chips"><span class="label">YOUR VIBE</span>{"".join(chips)}</div>',
@@ -1065,13 +1294,13 @@ if st.session_state.stage == "results":
                 st.rerun()
 
     
-    st.markdown(f'<div class="row-title">Top {len(top)} for your {esc(p["mood"].lower())} mood</div>',
-                unsafe_allow_html=True)
+    st.markdown(f'<div class="row-title">{esc(vibe_title(p, len(top)))}</div>', unsafe_allow_html=True)
     cols = st.columns(TOP_N, gap="medium")
     for i, m in enumerate(top):
         with cols[i]:
             rating = f'<span class="rate">★ ~{esc(m["rating"])}</span>' if m.get("rating") else ""
-            meta = " · ".join(esc(x) for x in (m.get("year"), m.get("runtime"), first_genre(m)) if x)
+            seasons = f"{m['seasons']} seasons" if m.get("seasons") else ("Series" if m.get("is_series") else None)
+            meta = " · ".join(esc(x) for x in (m.get("year"), seasons or m.get("runtime"), first_genre(m)) if x)
             st.markdown(
                 f"""<div class="top-item">
   <span class="top-rank" aria-hidden="true">{i + 1}</span>
