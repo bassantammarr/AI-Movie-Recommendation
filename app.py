@@ -30,6 +30,7 @@ MOODS = {
     "Heartbroken": {"color": "#9d3c72", "icon": ":material/heart_broken:", "rule": "emotional and cathartic, but ultimately hopeful"},
     "Curious": {"color": "#2f7a52", "icon": ":material/explore:", "rule": "mind-expanding: mysteries, big ideas, discovery"},
     "Surprise me": {"color": "#474747", "icon": ":material/shuffle:", "rule": "anything goes: varied, unexpected but acclaimed picks"},
+    "Other": {"color": "#2a2a2a", "icon": ":material/edit:", "rule": ""},  
 }
 GENRES = ["Drama", "Comedy", "Rom-Com", "Romance", "Thriller", "Action", "Adventure", "Sci-Fi", "Fantasy",
           "Mystery", "Crime", "Horror", "Animation", "Anime", "Family", "Documentary", "Biography", "History",
@@ -135,7 +136,8 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ d
 .stApp button[data-testid="stBaseButton-segmented_controlActive"] {{
   background:#fff; color:#141414; border-color:#fff; min-height:44px; padding:0 26px; font-weight:700;
 }}
-.st-key-search_row label p {{ font-size:12px; letter-spacing:1px; font-weight:600; color:#b3b3b3; text-transform:uppercase; }}
+.st-key-mood_6 button {{ border:2px dashed #6b6b6b !important; }}
+.st-key-genre_box label p, .st-key-custom_mood label p, .st-key-search_row label p {{ font-size:12px; letter-spacing:1px; font-weight:600; color:#b3b3b3; text-transform:uppercase; }}
 .badge.star-badge {{ border-color:#f5c518; color:#f5c518; }}
 
 /* form labels */
@@ -144,7 +146,7 @@ section[data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] {{ d
 /* mood tiles */
 [class*="st-key-mood_"] {{ display:flex; justify-content:center; }}
 .stApp [class*="st-key-mood_"] button {{
-  width:150px; height:150px; border-radius:6px; border:0; color:#fff; opacity:.85;
+  width:100%; max-width:150px; height:auto; aspect-ratio:1/1; margin:0 auto; display:flex; border-radius:6px; border:0; color:#fff; opacity:.85;
   outline:4px solid transparent; transition: transform .15s ease, opacity .15s ease;
 }}
 .stApp [class*="st-key-mood_"] button:hover {{ opacity:1; transform:scale(1.04); color:#fff; }}
@@ -337,7 +339,7 @@ div[role="dialog"] .reason:nth-of-type(3) {{ animation-delay:.16s; }}
   .top-rank {{ font-size:150px; margin-right:-16px; }}
   .poster, .top-tagline, .top-name {{ width:160px !important; }}
   .poster {{ height:232px; }}
-  .stApp [class*="st-key-mood_"] button {{ width:120px; height:120px; }}
+  .stApp [class*="st-key-mood_"] button {{ max-width:120px; }}
   .stApp [class*="st-key-mood_"] button span[data-testid="stIconMaterial"] {{ font-size:44px; }}
   .loader .ghost:nth-child(n+4) {{ display:none; }}
   .hero-poster {{ max-width:150px !important; margin:8px auto 0 !important; }}
@@ -383,8 +385,35 @@ def parse_json(text):
         return json.loads(match.group(0))
 
 
+def era_range(era):
+    
+    if not era or era == "Any era":
+        return None
+    if era in ERA_RANGES:
+        return ERA_RANGES[era]
+    t = str(era).lower().replace("–", "-").replace("—", "-")
+    years = [int(y) for y in re.findall(r"(?<!\d)(1[89]\d\d|20\d\d)(?!\d)", t)]
+    if len(years) >= 2:
+        return min(years), max(years)
+    if years:
+        y = years[0]
+        if re.search(r"\b(after|since|from|newer|post)\b|\+", t):
+            return y, 2100
+        if re.search(r"\b(before|until|older|pre)\b", t):
+            return 1900, y
+        if re.search(rf"{y}\s*'?s\b", t):  # 1990s
+            return y - y % 10, y - y % 10 + 9
+        return y, y
+    decade = re.search(r"\b'?(\d0)'?s\b", t)  # 80s, '90s
+    if decade:
+        d = int(decade.group(1))
+        start = 1900 + d if d >= 30 else 2000 + d
+        return start, start + 9
+    return None
+
+
 def wanted_count(profile):
-    strict = (profile["language"] != "Any" or profile["era"] in ERA_RANGES or profile.get("actor")
+    strict = (profile["language"] != "Any" or era_range(profile["era"]) or profile.get("actor")
               or profile.get("kind", "Movies") != "Both" or LENGTHS.get(profile.get("length")))
     return profile["count"] + (EXTRA_CANDIDATES if strict else 0)
 
@@ -400,9 +429,11 @@ def build_prompt(profile, exclude, pool=None, liked=None):
             f"in {lang}-language cinema. English-language/Hollywood films are NOT allowed, even if dubbed or "
             f"subtitled in {lang}. If few films fit every wish, keep the language and relax the genre instead."
         )
-    if profile["era"] in ERA_RANGES:
-        lo, hi = ERA_RANGES[profile["era"]]
-        hard_rules.append(f"- ERA IS MANDATORY: every movie must be first released between {lo} and {min(hi, 2026)}.")
+    if era_range(profile["era"]):
+        lo, hi = era_range(profile["era"])
+        hard_rules.append(f"- ERA IS MANDATORY: every title must be first released between {lo} and {min(hi, 2026)}.")
+    elif profile["era"] != "Any era":
+        hard_rules.append(f"- Era wish (in the user's words): {profile['era']}.")
     kind = profile.get("kind", "Movies")
     if kind == "Movies":
         hard_rules.append("- TYPE IS MANDATORY: recommend feature films only, no TV series.")
@@ -445,7 +476,7 @@ def build_prompt(profile, exclude, pool=None, liked=None):
 User profile:
 - Looking for: {noun}
 - Age: {profile['age']}
-- Mood: {profile['mood']} ({MOODS[profile['mood']]['rule']})
+- Mood: {profile['mood']} ({MOODS.get(profile['mood'], {}).get('rule') or "in the user's own words; interpret it"})
 - Preferred genres: {genres}  (Rom-Com = romantic comedy)
 - Language: {profile['language']}
 - Era: {profile['era']}
@@ -626,7 +657,7 @@ def pool_details(links, era_name):
             f["title"] = b["title"]["value"]
         if "gl" in b:
             f["genres"].add(b["gl"]["value"].replace(" film", ""))
-    lo, hi = ERA_RANGES.get(era_name, (1800, 2200))
+    lo, hi = era_range(era_name) or (1800, 2200)
     pool = [
         {"title": f["title"], "year": min(f["years"]), "genres": ", ".join(sorted(f["genres"])[:4]),
          "links": links[qid]}
@@ -743,7 +774,7 @@ def verify_movies(movies, profile):
         movie["lang_ok"] = lang_match(best) if best["languages"] else None
         movie["verified"] = True
 
-    era = ERA_RANGES.get(profile["era"])
+    era = era_range(profile["era"])
     kind = profile.get("kind", "Movies")
     limit = LENGTHS.get(profile.get("length"))
     fav = str(profile.get("favourite") or "").strip().lower()
@@ -1017,7 +1048,7 @@ def share_text(movies, p):
     return "\n".join(lines)
 
 
-LOAD_STEPS = ["Reading your vibe", "Finding real titles", "Asking the AI", "Checking facts", "Fetching posters"]
+LOAD_STEPS = ["Reading your vibe", "Finding real titles", "Picking your matches", "Checking facts", "Fetching posters"]
 
 
 def show_loader(slot, step, headline, sub=""):
@@ -1247,7 +1278,8 @@ with st.container(key="header"):
 if st.session_state.stage == "setup":
     prof = st.session_state.profile
     if prof and st.session_state.get("_prefilled") is not True:
-        st.session_state.mood_sel = prof.get("mood", "Thoughtful")
+        saved = prof.get("mood", "Thoughtful")
+        st.session_state.mood_sel = saved if saved in MOODS else "Other"  
         st.session_state._prefilled = True
     sel = st.session_state.mood_sel
 
@@ -1270,19 +1302,32 @@ if st.session_state.stage == "setup":
         kind = st.segmented_control("Looking for", KINDS, default=prof.get("kind", "Movies"),
                                     label_visibility="collapsed", width="content") or "Movies"
     st.write("")
-    _, mid, _ = st.columns([1, 8, 1])
+    _, mid, _ = st.columns([0.4, 9, 0.4])
     with mid:
         cols = st.columns(len(MOODS))
         for i, (name, d) in enumerate(MOODS.items()):
             with cols[i]:
-                st.button(name, key=f"mood_{i}", icon=d["icon"], on_click=set_mood, args=(name,))
+                st.button(name, key=f"mood_{i}", icon=d["icon"], on_click=set_mood, args=(name,), width="stretch")
+
+    custom_mood = ""
+    if sel == "Other":
+        _, mid, _ = st.columns([1.5, 4, 1.5])
+        with mid, st.container(key="custom_mood"):
+            saved = prof.get("mood", "")
+            custom_mood = st.text_input(
+                "Describe your mood", value="" if saved in MOODS else saved, max_chars=80,
+                placeholder="e.g. nostalgic, need a good cry, hyped after the gym, can't sleep…",
+            )
 
     st.write("")
-    _, mid, _ = st.columns([1, 5, 1])
-    with mid:
-        with st.container(key="genre_pills"):
-            genres = st.pills("Genres", GENRES, selection_mode="multi", default=prof.get("genres") or ["Drama"],
-                              label_visibility="collapsed")
+    _, mid, _ = st.columns([1.5, 4, 1.5])
+    with mid, st.container(key="genre_box"):
+        saved_genres = prof.get("genres") or ["Drama"]
+        genres = st.multiselect(
+            "Genres", GENRES + [g for g in saved_genres if g not in GENRES], default=saved_genres,
+            accept_new_options=True, placeholder="Pick genres, or type your own and press Enter…",
+            help="Missing a genre? Type it (e.g. Heist, Coming-of-age, K-Drama) and press Enter.",
+        )
 
     st.write("")
     with st.container(key="search_row"):
@@ -1301,7 +1346,10 @@ if st.session_state.stage == "setup":
         age = c1.number_input("Age", min_value=5, max_value=100, value=int(prof.get("age", 22)), step=1)
         language = c2.selectbox("Language", LANGUAGES, index=LANGUAGES.index(prof.get("language", "Any")),
                                 format_func=lang_label)
-        era = c3.selectbox("Era", ERAS, index=ERAS.index(prof.get("era", "Any era")))
+        saved_era = prof.get("era", "Any era")
+        era_options = ERAS + ([saved_era] if saved_era not in ERAS else [])
+        era = c3.selectbox("Era", era_options, index=era_options.index(saved_era), accept_new_options=True,
+                           help="Pick one, or type your own: 90s, 1985-1995, after 2015, before 1970…") or "Any era"
         company = c4.selectbox("Watching with", list(COMPANY),
                                index=list(COMPANY).index(prof.get("company", "Just me")))
         length = c5.selectbox("Length", list(LENGTHS), index=list(LENGTHS).index(prof.get("length", "Any length")),
@@ -1315,9 +1363,11 @@ if st.session_state.stage == "setup":
     if go:
         if not client:
             st.error("Add a working Groq API key at the top right to continue.")
+        elif sel == "Other" and not custom_mood.strip():
+            st.warning("Tell us your mood in a few words, or pick one of the tiles.")
         else:
             st.session_state.profile = {
-                "mood": sel,
+                "mood": custom_mood.strip().capitalize() if sel == "Other" else sel,
                 "genres": genres or [],
                 "age": int(age),
                 "language": language,
@@ -1361,7 +1411,7 @@ if st.session_state.stage == "loading":
                             "Pulling a list of real titles from Wikidata" if profile.get("actor") or lang_name
                             not in ("Any", "English") else "Narrowing things down")
                 pool = get_pool(profile, tried)
-                show_loader(slot, 2, "Asking the AI for your best matches…",
+                show_loader(slot, 2, "Picking your best matches…",
                             "Hunting for a few more" if round_no else "Matching mood, genres and wishes")
                 batch = fetch_movies(client, model, profile, tried, pool, st.session_state.liked)
                 tried += [m["title"] for m in batch]
